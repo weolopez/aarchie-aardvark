@@ -2,40 +2,31 @@
 
 ## Overview
 
-A browser-based coding agent that combines LLM capabilities with a JavaScript tool execution environment. Uses a hybrid storage approach: OPFS (Origin Private File System) for file storage and IndexedDB for sessions, tools, and metadata. The agent runs entirely in a **Web Worker**, ensuring the main thread remains responsive for the UI.
+A browser-based coding agent that functions as an **intelligent runtime**. It combines LLM capabilities with a persistent JavaScript tool registry and a direct UI rendering channel. The agent runs entirely in a **Web Worker**, ensuring the main thread remains responsive for the UI.
 
 **Storage Strategy:**
-- **OPFS**: Repository files, tool definitions (large, hierarchical data, editable as files)
-- **IndexedDB**: Session tree, tool execution history, pending tool approvals (structured, queryable data)
+- **OPFS (Project Space)**: Strictly for repository source code and assets.
+- **IndexedDB (User Space)**: Global Tool Registry, Session trees, and System metadata.
 
 ## Context
 
 The agent enables developers to:
-- Load GitHub repositories into a local OPFS-backed filesystem
-- Chat with an AI assistant that can read, write, and edit files
-- Create custom JavaScript tools dynamically
-- Maintain branching conversation histories
+- Load GitHub repositories into a local OPFS-backed filesystem.
+- Chat with an AI assistant that can read/write files and **generate live UI components**.
+- Create custom JavaScript tools that persist globally across different projects.
+- Maintain branching conversation histories.
 
 ## Design Philosophy
 
-- **Simplicity over complexity**: Pure JavaScript architecture, no compilation steps (WASM/Rust) required for the agent core.
-- **Dynamic extensibility**: Tools are stored as SKILL.md files in OPFS (`.tools/*/SKILL.md`), not hardcoded.
-- **Security first**: Dynamic tools require user approval before execution.
-- **Web-native**: Leverages browser capabilities (OPFS, IndexedDB, Web Workers, fetch).
-- **Hot-reloadable**: New tools become available immediately after approval.
-- **Transparent**: Users can read and edit tool definitions as regular files.
+- **Registry-Based Execution**: Tools are first-class executable objects stored in IndexedDB, not static text files.
+- **Global Utility**: Tools are "installed" into the user's environment, available across multiple repositories.
+- **Agent as Runtime**: The agent doesn't just edit files; it emits events and code to the main thread to modify the UI in real-time.
+- **Security First**: Dynamic tools and UI components require user approval before execution/rendering.
+- **Zero-Latency Dispatch**: Tool definitions are loaded into memory on startup, eliminating file I/O during tool selection.
 
 ---
 
 ## System Context
-
-The agent enables developers to:
-- Load GitHub repositories into a local OPFS-backed filesystem
-- Chat with an AI assistant that can read, write, and edit files
-- Create custom JavaScript tools dynamically
-- Maintain branching conversation histories
-
-## Component Architecture
 
 The system follows a modular, event-driven JavaScript architecture organized into five main layers:
 
@@ -89,19 +80,20 @@ graph TB
 ### Component Responsibilities
 
 | Layer | Component | Responsibility |
-|-------|-----------|----------------|
-| **UI** | Chat UI | Renders chat interface and message history |
-| | **Preview Engine** | **New**: Dynamically registers and renders Web Components sent by the Agent |
-| | Session Tree UI | Displays and navigates conversation branches |
-| | Tool Approval UI | Intercepts new tool definitions and component renders for user consent |
-| **Core** | Event Bus | Central pub/sub messaging system for component decoupling |
-| | Message Bridge | Handles communication between Main Thread and Web Worker |
-| | API Client | Manages communication with LLM providers (Gemini, etc.) |
-| **Storage** | **Repo Store** | Manages repository source code (OPFS) |
-| | **Global Store** | **New**: Stores the `tools` registry and `sessions` (IndexedDB) |
-| **Agent** | **Tool Registry** | **New**: In-memory map of executable functions, hydrated from IndexedDB |
-| | Agent Core | Manages the LLM loop and orchestrates tool execution |
-| | Session Manager | Manages conversation state and branching |
+| --- | --- | --- |
+| **UI** | Chat UI | Renders chat interface. |
+|  | **Preview Engine** | **New**: Dynamically registers and renders Web Components sent by the Agent. |
+|  | Session Tree UI | Displays and navigates conversation branches. |
+|  | Tool Approval UI | Intercepts new tool definitions and component renders for user consent. |
+|  | Export UI | Handles session export to various formats. |
+| **Core** | Event Bus | Central pub/sub messaging system. |
+|  | Message Bridge | Handles communication (Worker ↔ Main). |
+|  | API Client | Manages communication with LLM providers. |
+| **Storage** | **Repo Store** | Manages project source code (OPFS). |
+|  | **Global Store** | **New**: Stores the `tools` registry and `sessions` (IndexedDB). |
+| **Agent** | **Tool Registry** | **New**: In-memory map of executable functions, hydrated from IndexedDB. |
+|  | Agent Core | Manages the LLM loop and orchestrates tool execution. |
+|  | Session Manager | Manages conversation state and branching. |
 
 ---
 
@@ -167,403 +159,124 @@ flowchart TB
 2. Encapsulates it (Shadow DOM or `customElements.define`).
 3. Mounts it to the chat stream or a dedicated preview panel.
 
+
 ---
 
 ## Data Model
 
-```mermaid
-classDiagram
-    class Agent {
-        +String apiKey
-        +String model
-        +SessionTree session
-        +Map~String, Tool~ tools
-        +chat(message) Promise~Result~
-        +getAvailableTools() Array~Tool~
-    }
-    
-    class SessionTree {
-        +String sessionId
-        +Node root
-        +Node current
-        +appendMessage(role, content)
-        +branch(fromNode) Node
-        +getHistory() Array~Message~
-    }
-    
-    class Node {
-        +String id
-        +String role
-        +String content
-        +Array~ToolCall~ toolCalls
-        +Array~Node~ children
-        +Node parent
-    }
-    
-    class Tool {
-        +String name
-        +String description
-        +Object parameters
-        +String implementation
-        +Number version
-        +execute(args) ToolResult
-    }
-    
-    class ToolResult {
-        +Boolean success
-        +String output
-        +String error
-    }
-    
-    class ToolCall {
-        +String toolName
-        +Object arguments
-        +String callId
-    }
-    
-    Agent "1" --> "1" SessionTree : manages
-    Agent "1" --> "*" Tool : uses
-    SessionTree "1" --> "1" Node : root
-    Node "1" --> "*" Node : children
-    Node "*" --> "*" ToolCall : contains
-    Tool "*" --> "*" ToolResult : produces
-```
+### Tool Schema (IndexedDB)
 
-### Storage Schema
+Tools are stored as structured objects in the `tools` store of IndexedDB.
 
-#### OPFS Structure
-Repository files and tool definitions are stored in OPFS using a directory structure:
-```
-OPFS Root
-└── repos/
-    └── {owner}_{repo}/              // Repository root
-        ├── src/
-        │   └── index.js             // File content
-        ├── package.json
-        ├── .tools/                  // Tool definitions directory
-        │   ├── count_lines.json     // Tool: count lines in a file
-        │   ├── find_unused.json     // Tool: find unused code
-        │   └── custom_analyzer.json // User-created tool
-        └── ...
-```
-
-**File Operations:**
-- **Read**: `root.getFileHandle(path).getFile().text()`
-- **Write**: `root.getFileHandle(path, {create: true}).createWritable().write(content)`
-- **Directory traversal**: Use `FileSystemDirectoryHandle` to walk the tree
-
-#### Tool Definition Format (OPFS)
-
-Tools are defined using the SKILL.md format inspired by Claude's Agent Skills system. Each tool is a directory containing SKILL.md with YAML frontmatter and markdown instructions.
-
-```
-OPFS Root
-└── repos/
-    └── {owner}_{repo}/              // Repository root
-        ├── .tools/                  // Tools directory
-        │   ├── count-lines/         // Tool directory
-        │   │   ├── SKILL.md         // Tool definition (frontmatter + instructions)
-        │   │   └── scripts/         // Optional bundled scripts
-        │   │       └── count.js
-        └── ...
-```
-
-#### IndexedDB Schema
-
-Tools are stored as files in OPFS (`.tools/*.json`). IndexedDB is used for sessions, history, and pending tool approvals.
-
-#### `pending_tools` Store
 ```javascript
 {
-  toolId: "uuid-789",           // Primary key
-  name: "custom_analyzer",
-  description: "Custom code analyzer",
-  parameters: { ... },
-  implementation: "...",
-  created: "2026-02-07T10:30:00Z",
-  status: "pending",            // "pending", "approved", "rejected"
-  requestedBy: "llm",           // "llm" or "user"
-  reason: "User requested custom analysis"
-}
-```
-
-#### `sessions` Store
-```javascript
-{
-  sessionId: "uuid-123",     // Primary key
-  root: {
-    id: "node-1",
-    role: "user",
-    content: "Hello",
-    children: [...],
-    parent: null
+  id: "uuid-555-666",        // Primary Key
+  name: "fetch_weather",     // Unique Handle
+  version: 1,
+  
+  // The logic (Executable)
+  // Stored as string, hydrated to function via new Function()
+  func: "async ({ city }) => { const res = await fetch(...); return res.json(); }",
+  
+  // The Interface (LLM Metadata)
+  schema: {
+    description: "Fetches weather data",
+    parameters: { 
+      type: "object", 
+      properties: { 
+        city: { type: "string" } 
+      } 
+    }
   },
-  currentNodeId: "node-5",
-  created: "2026-02-07T10:00:00Z",
-  modified: "2026-02-07T10:30:00Z"
+  
+  // Permissions & Metadata
+  type: "system",            // "system" (built-in) or "user" (created)
+  permissions: ["network"],  // "network", "fs", "ui"
+  created: "2026-02-08T10:00:00Z"
 }
 ```
 
-#### `history` Store
+### Session Schema (IndexedDB)
+
+Remains similar, but `toolCalls` now reference the Registry ID.
+
 ```javascript
 {
-  id: "uuid-456",           // Primary key
   sessionId: "uuid-123",
-  timestamp: "2026-02-07T10:30:00Z",
-  toolName: "read",
-  arguments: { path: "src/main.rs" },
-  result: { success: true, output: "fn main() {...}" }
+  root: { ... },
+  // ... standard tree structure
 }
+```
+
+### OPFS Structure
+
+Cleaned up. No longer contains hidden configuration or tool definitions.
+
+```
+OPFS Root
+└── repos/
+    └── {owner}_{repo}/       // Pure Source Code
+        ├── src/
+        ├── package.json
+        └── ...
 ```
 
 ---
 
 ## Sequence Diagrams
 
-### Standard Tool Execution Flow
+### 1. Dynamic Tool Creation (Registry Flow)
 
 ```mermaid
 sequenceDiagram
     actor User
     participant UI as Chat UI
-    participant Agent as Integrated Agent (Worker)
-    participant LLM as Gemini API
-    participant OPFS as OPFS
-    
-    User->>UI: Send message
-    
-    UI->>Agent: postMessage({type: 'chat', message})
-    activate Agent
-    
-    Agent->>OPFS: Scan .tools/ directory
-    OPFS-->>Agent: SKILL.md files (frontmatter only)
-    
-    Agent->>Agent: Build tool declarations from frontmatter
-    Agent->>LLM: generateContent(tools, history)
-    
-    loop Agent Loop
-        LLM-->>Agent: Response with tool_calls
-        
-        alt Has tool calls
-            Agent->>Agent: Emit step event
-            
-            loop Each Tool Call
-                Agent->>Agent: Execute Tool (Internal)
-                
-                alt Tool is built-in
-                    Agent->>Agent: Run native implementation
-                else Tool is dynamic
-                    Agent->>OPFS: Load .tools/{name}/SKILL.md
-                    OPFS-->>Agent: SKILL.md
-                    Agent->>Agent: Parse and execute JS
-                end
-                
-                Agent->>OPFS: Read/Write repository files
-                OPFS-->>Agent: File data
-                
-                Agent->>Agent: Capture Result
-                Agent->>Agent: Append to history
-            end
-            
-            Agent->>LLM: generateContent(updated history)
-        else Final response
-            Agent->>Agent: Append to session tree
-            Agent->>Agent: Persist session (IndexedDB)
-            Agent-->>UI: postMessage({type: 'done', response})
-        end
-    end
-    deactivate Agent
-    
-    UI-->>User: Display response
-```
-
-### Dynamic Tool Creation Flow (with Approval)
-
-```mermaid
-sequenceDiagram
-    actor User
-    participant UI as Chat UI
-    participant Agent as Integrated Agent (Worker)
+    participant Agent as Agent (Worker)
+    participant Registry as Tool Registry
     participant DB as IndexedDB
-    participant OPFS as OPFS
     
-    User->>UI: "Create a tool that counts lines"
-    UI->>Agent: postMessage({type: 'chat', message})
+    User->>UI: "Create a tool to fetch crypto prices"
+    UI->>Agent: chat(message)
     
-    Agent->>Agent: LLM generates SKILL.md
-    Agent->>DB: Insert into pending_tools
+    Agent->>Agent: LLM generates JSON Tool Definition
+    Agent->>DB: put('pending_tools', toolObj)
     
-    Agent-->>UI: postMessage({type: 'tool_pending', toolId, skillMd})
+    Agent-->>UI: postMessage('tool_pending', toolObj)
     
-    User->>UI: Review & Approve
-    UI->>Agent: postMessage({type: 'approve_tool', toolId})
+    User->>UI: Approve
+    UI->>Agent: postMessage('approve_tool', {id})
     
-    Agent->>DB: Get pending tool details
-    Agent->>OPFS: Write .tools/{name}/SKILL.md
+    Agent->>DB: move(pending -> tools)
+    Agent->>Registry: Map.set(tool.name, new Function(tool.func))
     
-    Agent->>DB: Update status to "approved"
-    Agent->>Agent: Reload tool registry
+    Agent-->>UI: "Tool 'fetch_crypto' installed globally."
+```
+
+### 2. Self-Modifying UI Flow (Component Generation)
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as Main Thread (Preview Engine)
+    participant Agent as Agent (Worker)
+    participant OPFS as Repo Storage
     
-    Agent-->>UI: "Tool approved and available"
+    User->>UI: "Make a dashboard widget for this data"
+    UI->>Agent: chat(message)
+    
+    Agent->>Agent: LLM Generates Component Code
+    
+    par Persistence
+        Agent->>OPFS: Write 'src/components/Dashboard.js'
+    and Live Preview
+        Agent-->>UI: postMessage('preview_component', { code, tag: 'my-dashboard' })
+    end
+    
+    UI->>UI: customElements.define('my-dashboard', ...)
+    UI->>UI: Render <my-dashboard> in Chat
+    
+    UI-->>User: Visual Component appears instantly
 ```
-
----
-
-## Tool Execution Details
-
-### Built-in Tools
-
-All built-in tools are implemented in JavaScript and operate directly on OPFS within the Worker.
-
-#### `read` Tool
-```javascript
-{
-  name: "read",
-  description: "Read file contents with optional line offset and limit",
-  parameters: {
-    type: "object",
-    properties: {
-      path: { type: "string", description: "File path to read" },
-      offset: { type: "number", description: "1-indexed line number to start from" },
-      limit: { type: "number", description: "Maximum lines to read" }
-    },
-    required: ["path"]
-  }
-}
-```
-
-#### `write` Tool
-```javascript
-{
-  name: "write",
-  description: "Write or overwrite a file",
-  parameters: {
-    type: "object",
-    properties: {
-      path: { type: "string", description: "File path" },
-      content: { type: "string", description: "File content" }
-    },
-    required: ["path", "content"]
-  }
-}
-```
-
-#### `edit` Tool
-```javascript
-{
-  name: "edit",
-  description: "Edit a file with surgical find-and-replace",
-  parameters: {
-    type: "object",
-    properties: {
-      path: { type: "string", description: "File path" },
-      oldText: { type: "string", description: "Text to find" },
-      newText: { type: "string", description: "Replacement text" }
-    },
-    required: ["path", "oldText", "newText"]
-  }
-}
-```
-
-#### `ls` Tool
-```javascript
-{
-  name: "ls",
-  description: "List directory contents",
-  parameters: {
-    type: "object",
-    properties: {
-      path: { type: "string", description: "Directory path to list" },
-      detailed: { type: "boolean", description: "Show detailed listing with permissions" }
-    },
-    required: ["path"]
-  }
-}
-```
-
-#### `grep` Tool
-```javascript
-{
-  name: "grep",
-  description: "Search file contents with regex pattern",
-  parameters: {
-    type: "object",
-    properties: {
-      pattern: { type: "string", description: "Regex pattern" },
-      path: { type: "string", description: "Optional path to limit search" },
-      ignoreCase: { type: "boolean" }
-    },
-    required: ["pattern"]
-  }
-}
-```
-
-#### `find` Tool
-```javascript
-{
-  name: "find",
-  description: "Find files by glob pattern",
-  parameters: {
-    type: "object",
-    properties: {
-      pattern: { type: "string", description: "Glob pattern like '*.rs'" },
-      path: { type: "string", description: "Optional starting directory" }
-    },
-    required: ["pattern"]
-  }
-}
-```
-
-#### `js` Tool
-```javascript
-{
-  name: "js",
-  description: "Execute JavaScript code with access to file operations",
-  parameters: {
-    type: "object",
-    properties: {
-      code: { 
-        type: "string", 
-        description: "JavaScript code to execute. Available globals: read(path), write(path, content), grep(pattern), find(pattern), console" 
-      }
-    },
-    required: ["code"]
-  }
-}
-```
-
-### Dynamic Tool API
-
-Dynamic tools have access to helper functions injected into their execution scope:
-- `read(path)`
-- `write(path, content)`
-- `grep(pattern, path?)`
-- `find(pattern)`
-- `console`
-
----
-
-## Session Management Features
-
-### Context Compaction (Automatic)
-
-**Purpose**: Prevent context window overflow by automatically summarizing older conversation history while preserving the full session tree.
-
-**Location**: Agent Core (Worker)
-
-**Trigger Conditions**:
-- **Proactive**: Token count approaches model limit (configurable threshold, default 80%)
-- **Reactive**: API returns context overflow error
-
-### Session Export
-
-**Purpose**: Export session history to external formats for sharing, archiving, or analysis.
-
-**Location**: UI command `/export` triggers Agent Core
-
-**Export Formats**:
-- JSONL (default)
-- Markdown
 
 ---
 
@@ -572,52 +285,32 @@ Dynamic tools have access to helper functions injected into their execution scop
 ### Main Thread → Worker
 
 | Type | Payload | Description |
-|------|---------|-------------|
-| `init` | `{ apiKey, model, repo }` | Initialize agent |
-| `chat` | `{ message }` | Send user message |
-| `branch` | `{ nodeId }` | Branch session at node |
-| `load_repo` | `{ owner, repo }` | Trigger GitHub load |
-| `get_history` | `{}` | Request current branch history |
-| `get_tree` | `{}` | Request full session tree |
-| `approve_tool` | `{ toolId }` | Approve pending tool |
-| `reject_tool` | `{ toolId }` | Reject pending tool |
+| --- | --- | --- |
+| `init` | `{ apiKey, model }` | Initialize agent & hydrate Registry. |
+| `load_repo` | `{ owner, repo }` | Mount a specific repo to the FS scope. |
+| `approve_tool` | `{ toolId }` | User authorized a new tool. |
+| `approve_preview` | `{ componentId }` | User allows component code to execute in UI. |
 
 ### Worker → Main Thread
 
 | Type | Payload | Description |
-|------|---------|-------------|
-| `ready` | `{}` | Agent initialized |
-| `step` | `{ type, content, toolCalls? }` | Agent step event |
-| `tool_call` | `{ callId, name, arguments }` | Execute tool (notification only) |
-| `tool_result` | `{ callId, result }` | Tool result (notification only) |
-| `done` | `{ response }` | Final response |
-| `error` | `{ message }` | Error occurred |
-| `tool_pending` | `{ toolId, name, code }` | New tool awaiting approval |
+| --- | --- | --- |
+| `ready` | `{ toolCount }` | Registry loaded. |
+| `tool_pending` | `{ toolObj }` | Request permission to save new tool. |
+| `preview_component` | `{ tagName, script, styles }` | **Critical**: Instructions to render a UI element. |
+| `step` | `{ content }` | Standard chat streaming. |
 
 ---
 
 ## Security Considerations
 
-1. **Dynamic Code Execution**: The `js` tool and dynamic tools use `new Function()`.
-   - Code is generated by the LLM.
-   - Runs in the **Web Worker** context, isolated from the main thread and DOM.
-   - Limited scope: only injected file operations are available.
-
-2. **Tool Approval**: Dynamically created tools require explicit user approval.
-   - Tools are stored in `pending_tools` queue.
-   - User reviews SKILL.md before execution.
-
-3. **Storage Isolation**:
-   - **OPFS**: Per-repository isolation (`repos/{owner}_{repo}/`).
-   - **IndexedDB**: Namespaced by agent instance.
-
-4. **API Keys**: Stored in Worker memory, never persisted.
-
----
+1. **Registry Sandbox**: Tools loaded from the registry are executed via `new Function()`. While cleaner than `eval()`, they still run in the Worker. The Worker must be CSP-restricted to prevent exfiltration if a malicious tool is imported.
+2. **UI Isolation**:
+* **Risk**: The `preview_component` channel allows the LLM to execute code on the Main Thread.
+* **Mitigation**: Generated components should be rendered inside a **Shadow DOM** with `closed` mode, or strictly sanitized if not using Web Components.
+* **Policy**: The agent should never automatically execute a UI component. The UI must present a "Render Preview" button for the user to click (Human-in-the-loop).
 
 ## Future Enhancements
 
-1. **Tool Marketplace**: Import tools from URLs or a shared registry.
-2. **Streaming**: Add streaming LLM responses.
-3. **File Explorer**: Optional UI component for visual file browsing.
-4. **Multi-repo**: Support loading multiple repositories simultaneously.
+1. **Tool Marketplace**: Since tools are just JSON objects, they can be easily imported/exported as simple JSON files or synced via a cloud backend.
+2. **NPM Imports**: Allow tools to import packages from a CDN (e.g., esm.sh) to add capabilities (like `lodash` or `moment`) without bundling.
