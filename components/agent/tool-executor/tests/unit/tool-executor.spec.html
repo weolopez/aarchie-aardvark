@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tool Executor - Unit Tests</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <div class="max-w-4xl mx-auto p-6">
+    <header class="mb-8">
+      <h1 class="text-3xl font-bold text-gray-800 mb-2">Tool Executor - Unit Tests</h1>
+      <p class="text-gray-600">Testing sandboxed tool execution with permission enforcement</p>
+    </header>
+
+    <div id="test-results" class="space-y-4">
+      <div class="bg-blue-50 border-l-4 border-blue-400 p-4">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+            </svg>
+          </div>
+          <div class="ml-3">
+            <p class="text-sm text-blue-700">
+              Running Tool Executor unit tests...
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="test-status" class="mt-8 hidden">
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">Test Results</h2>
+        <div id="status-content"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { ToolExecutor } from '../../../src/index.js';
+    import { checkPermissions, validatePermissions } from '../../../src/permissions.js';
+
+    // Test utilities
+    const tests = [];
+    let passed = 0;
+    let failed = 0;
+
+    function test(name, fn) {
+      tests.push({ name, fn });
+    }
+
+    function assert(condition, message) {
+      if (!condition) {
+        throw new Error(message);
+      }
+    }
+
+    function assertEqual(actual, expected, message) {
+      if (actual !== expected) {
+        throw new Error(`${message}: expected ${expected}, got ${actual}`);
+      }
+    }
+
+    function assertThrows(fn, message) {
+      try {
+        fn();
+        throw new Error(`${message}: expected function to throw`);
+      } catch (error) {
+        if (error.message === `${message}: expected function to throw`) {
+          throw error;
+        }
+        // Expected throw occurred
+      }
+    }
+
+    // Test definitions
+    test('ToolExecutor constructor', () => {
+      const executor = new ToolExecutor();
+      assert(executor instanceof ToolExecutor, 'Should create ToolExecutor instance');
+      assertEqual(executor.timeout, 30000, 'Should set default timeout');
+    });
+
+    test('ToolExecutor with custom options', () => {
+      const executor = new ToolExecutor({
+        timeout: 10000,
+        maxMemory: 1000000,
+        allowedGlobals: ['console', 'JSON']
+      });
+      assertEqual(executor.timeout, 10000, 'Should set custom timeout');
+      assertEqual(executor.maxMemory, 1000000, 'Should set custom max memory');
+    });
+
+    test('validateToolFunction - valid function', () => {
+      const executor = new ToolExecutor();
+      const result = executor.validateToolFunction('async (args) => args.value * 2');
+      assert(result.valid, 'Should validate correct function syntax');
+    });
+
+    test('validateToolFunction - invalid function', () => {
+      const executor = new ToolExecutor();
+      const result = executor.validateToolFunction('invalid syntax {{{');
+      assert(!result.valid, 'Should reject invalid function syntax');
+      assert(result.error, 'Should provide error message');
+    });
+
+    test('execute - tool not found', async () => {
+      const executor = new ToolExecutor();
+      const context = { permissions: [] };
+      const result = await executor.execute('nonexistent-tool', {}, context);
+
+      assert(!result.success, 'Should fail for nonexistent tool');
+      assert(result.error.includes('not found'), 'Should indicate tool not found');
+    });
+
+    test('execute - missing permissions', async () => {
+      const executor = new ToolExecutor();
+      const context = { permissions: [] };
+
+      // Mock tool that requires permissions
+      executor._getTool = () => ({
+        name: 'test',
+        version: 1,
+        func: 'async () => "test"',
+        permissions: ['fs']
+      });
+
+      const result = await executor.execute('test', {}, context);
+      assert(!result.success, 'Should fail without required permissions');
+      assert(result.error.includes('requires permissions'), 'Should indicate permission requirement');
+    });
+
+    test('execute - successful execution', async () => {
+      const executor = new ToolExecutor();
+      const context = { permissions: [] };
+
+      // Mock successful tool
+      executor._getTool = () => ({
+        name: 'test',
+        version: 1,
+        func: 'async (args) => ({ result: args.input * 2 })',
+        permissions: []
+      });
+
+      const result = await executor.execute('test', { input: 5 }, context);
+      assert(result.success, 'Should succeed with valid tool');
+      assertEqual(result.output.result, 10, 'Should return correct result');
+      assert(result.duration >= 0, 'Should include execution duration');
+    });
+
+    test('execute - timeout', async () => {
+      const executor = new ToolExecutor({ timeout: 100 });
+      const context = { permissions: [] };
+
+      // Mock slow tool
+      executor._getTool = () => ({
+        name: 'slow-test',
+        version: 1,
+        func: 'async () => { await new Promise(resolve => setTimeout(resolve, 200)); return "done"; }',
+        permissions: []
+      });
+
+      const result = await executor.execute('slow-test', {}, context);
+      assert(!result.success, 'Should fail on timeout');
+      assert(result.error.includes('timed out'), 'Should indicate timeout error');
+    });
+
+    test('checkPermissions - valid permissions', () => {
+      assert(checkPermissions([], []), 'Should allow empty permissions');
+      assert(checkPermissions(['fs'], ['fs', 'network']), 'Should allow granted permissions');
+      assert(!checkPermissions(['fs'], ['network']), 'Should reject missing permissions');
+    });
+
+    test('validatePermissions - valid array', () => {
+      const result = validatePermissions(['fs', 'network']);
+      assert(result.valid, 'Should validate correct permissions');
+      assertEqual(result.errors.length, 0, 'Should have no errors');
+    });
+
+    test('validatePermissions - invalid permission', () => {
+      const result = validatePermissions(['fs', 'invalid']);
+      assert(!result.valid, 'Should reject invalid permissions');
+      assert(result.errors.length > 0, 'Should have errors');
+    });
+
+    // Run tests
+    async function runTests() {
+      const resultsDiv = document.getElementById('test-results');
+
+      for (const test of tests) {
+        try {
+          await test.fn();
+          passed++;
+          resultsDiv.innerHTML += `
+            <div class="bg-green-50 border-l-4 border-green-400 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                  </svg>
+                </div>
+                <div class="ml-3">
+                  <p class="text-sm text-green-700">✓ ${test.name}</p>
+                </div>
+              </div>
+            </div>
+          `;
+        } catch (error) {
+          failed++;
+          resultsDiv.innerHTML += `
+            <div class="bg-red-50 border-l-4 border-red-400 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                  </svg>
+                </div>
+                <div class="ml-3">
+                  <p class="text-sm text-red-700">✗ ${test.name}</p>
+                  <p class="text-sm text-red-600 mt-1">${error.message}</p>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      // Show final results
+      const statusDiv = document.getElementById('test-status');
+      const statusContent = document.getElementById('status-content');
+
+      statusDiv.classList.remove('hidden');
+      statusContent.innerHTML = `
+        <div class="grid grid-cols-3 gap-4 mb-4">
+          <div class="text-center">
+            <div class="text-2xl font-bold text-green-600">${passed}</div>
+            <div class="text-sm text-gray-600">Passed</div>
+          </div>
+          <div class="text-center">
+            <div class="text-2xl font-bold text-red-600">${failed}</div>
+            <div class="text-sm text-gray-600">Failed</div>
+          </div>
+          <div class="text-center">
+            <div class="text-2xl font-bold text-blue-600">${passed + failed}</div>
+            <div class="text-sm text-gray-600">Total</div>
+          </div>
+        </div>
+        ${failed === 0 ?
+          '<div class="bg-green-50 border-l-4 border-green-400 p-4"><p class="text-green-700">All tests passed! ✅</p></div>' :
+          '<div class="bg-red-50 border-l-4 border-red-400 p-4"><p class="text-red-700">Some tests failed. Please review the errors above.</p></div>'
+        }
+      `;
+    }
+
+    // Run tests when page loads
+    runTests().catch(error => {
+      console.error('Test runner failed:', error);
+      document.getElementById('test-results').innerHTML += `
+        <div class="bg-red-50 border-l-4 border-red-400 p-4">
+          <p class="text-red-700">Test runner failed: ${error.message}</p>
+        </div>
+      `;
+    });
+  </script>
+</body>
+</html>

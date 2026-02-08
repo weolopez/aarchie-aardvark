@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Permissions - Unit Tests</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <div class="max-w-4xl mx-auto p-6">
+    <header class="mb-8">
+      <h1 class="text-3xl font-bold text-gray-800 mb-2">Permissions - Unit Tests</h1>
+      <p class="text-gray-600">Testing permission validation and enforcement</p>
+    </header>
+
+    <div id="test-results" class="space-y-4">
+      <div class="bg-blue-50 border-l-4 border-blue-400 p-4">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+            </svg>
+          </div>
+          <div class="ml-3">
+            <p class="text-sm text-blue-700">
+              Running Permissions unit tests...
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="test-status" class="mt-8 hidden">
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">Test Results</h2>
+        <div id="status-content"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import {
+      validatePermissions,
+      checkPermissions,
+      PERMISSION_TYPES,
+      getPermissionDescription
+    } from '../../../src/permissions.js';
+
+    // Test utilities
+    const tests = [];
+    let passed = 0;
+    let failed = 0;
+
+    function test(name, fn) {
+      tests.push({ name, fn });
+    }
+
+    function assert(condition, message) {
+      if (!condition) {
+        throw new Error(message);
+      }
+    }
+
+    function assertEqual(actual, expected, message) {
+      if (actual !== expected) {
+        throw new Error(`${message}: expected ${expected}, got ${actual}`);
+      }
+    }
+
+    function assertThrows(fn, message) {
+      try {
+        fn();
+        throw new Error(`${message}: expected function to throw`);
+      } catch (error) {
+        if (error.message === `${message}: expected function to throw`) {
+          throw error;
+        }
+        // Expected throw occurred
+      }
+    }
+
+    // Test definitions
+    test('PERMISSION_TYPES - contains expected types', () => {
+      assert(Array.isArray(PERMISSION_TYPES), 'PERMISSION_TYPES should be an array');
+      assert(PERMISSION_TYPES.includes('fs'), 'Should include fs permission');
+      assert(PERMISSION_TYPES.includes('network'), 'Should include network permission');
+      assert(PERMISSION_TYPES.includes('ui'), 'Should include ui permission');
+    });
+
+    test('getPermissionDescription - valid permissions', () => {
+      const fsDesc = getPermissionDescription('fs');
+      assert(typeof fsDesc === 'string', 'Should return string description');
+      assert(fsDesc.length > 0, 'Description should not be empty');
+
+      const networkDesc = getPermissionDescription('network');
+      assert(typeof networkDesc === 'string', 'Should return string description');
+
+      const uiDesc = getPermissionDescription('ui');
+      assert(typeof uiDesc === 'string', 'Should return string description');
+    });
+
+    test('getPermissionDescription - invalid permission', () => {
+      const desc = getPermissionDescription('invalid');
+      assertEqual(desc, 'Unknown permission type', 'Should return unknown message');
+    });
+
+    test('validatePermissions - empty array', () => {
+      const result = validatePermissions([]);
+      assert(result.valid, 'Empty array should be valid');
+      assertEqual(result.errors.length, 0, 'Should have no errors');
+    });
+
+    test('validatePermissions - valid permissions', () => {
+      const result = validatePermissions(['fs', 'network']);
+      assert(result.valid, 'Valid permissions should pass');
+      assertEqual(result.errors.length, 0, 'Should have no errors');
+    });
+
+    test('validatePermissions - duplicate permissions', () => {
+      const result = validatePermissions(['fs', 'fs', 'network']);
+      assert(!result.valid, 'Duplicate permissions should fail');
+      assert(result.errors.length > 0, 'Should have errors');
+      assert(result.errors.some(error => error.includes('duplicate')), 'Should mention duplicates');
+    });
+
+    test('validatePermissions - invalid permission', () => {
+      const result = validatePermissions(['fs', 'invalid_perm']);
+      assert(!result.valid, 'Invalid permission should fail');
+      assert(result.errors.length > 0, 'Should have errors');
+      assert(result.errors.some(error => error.includes('invalid_perm')), 'Should mention invalid permission');
+    });
+
+    test('validatePermissions - mixed valid and invalid', () => {
+      const result = validatePermissions(['fs', 'invalid', 'network', 'another_invalid']);
+      assert(!result.valid, 'Mixed permissions should fail');
+      assert(result.errors.length >= 2, 'Should have multiple errors');
+    });
+
+    test('validatePermissions - non-array input', () => {
+      const result = validatePermissions('fs');
+      assert(!result.valid, 'Non-array should fail');
+      assert(result.errors.length > 0, 'Should have errors');
+    });
+
+    test('validatePermissions - null/undefined input', () => {
+      const result1 = validatePermissions(null);
+      assert(!result1.valid, 'Null should fail');
+
+      const result2 = validatePermissions(undefined);
+      assert(!result2.valid, 'Undefined should fail');
+    });
+
+    test('checkPermissions - empty required permissions', () => {
+      assert(checkPermissions([], []), 'Empty required should pass with empty granted');
+      assert(checkPermissions([], ['fs']), 'Empty required should pass with granted permissions');
+    });
+
+    test('checkPermissions - exact match', () => {
+      assert(checkPermissions(['fs'], ['fs']), 'Exact match should pass');
+      assert(checkPermissions(['fs', 'network'], ['fs', 'network']), 'Multiple exact match should pass');
+    });
+
+    test('checkPermissions - granted contains required', () => {
+      assert(checkPermissions(['fs'], ['fs', 'network']), 'Single permission in larger set should pass');
+      assert(checkPermissions(['fs', 'network'], ['fs', 'network', 'ui']), 'Multiple permissions in larger set should pass');
+    });
+
+    test('checkPermissions - missing permissions', () => {
+      assert(!checkPermissions(['fs'], []), 'Missing permission should fail');
+      assert(!checkPermissions(['fs'], ['network']), 'Wrong permission should fail');
+      assert(!checkPermissions(['fs', 'network'], ['fs']), 'Partial permissions should fail');
+    });
+
+    test('checkPermissions - case sensitivity', () => {
+      assert(!checkPermissions(['FS'], ['fs']), 'Case mismatch should fail');
+      assert(!checkPermissions(['fs'], ['FS']), 'Case mismatch should fail');
+    });
+
+    test('checkPermissions - non-array inputs', () => {
+      assert(!checkPermissions('fs', ['fs']), 'String required should fail');
+      assert(!checkPermissions(['fs'], 'fs'), 'String granted should fail');
+      assert(!checkPermissions(null, ['fs']), 'Null required should fail');
+      assert(!checkPermissions(['fs'], null), 'Null granted should fail');
+    });
+
+    // Run tests
+    async function runTests() {
+      const resultsDiv = document.getElementById('test-results');
+
+      for (const test of tests) {
+        try {
+          await test.fn();
+          passed++;
+          resultsDiv.innerHTML += `
+            <div class="bg-green-50 border-l-4 border-green-400 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                  </svg>
+                </div>
+                <div class="ml-3">
+                  <p class="text-sm text-green-700">✓ ${test.name}</p>
+                </div>
+              </div>
+            </div>
+          `;
+        } catch (error) {
+          failed++;
+          resultsDiv.innerHTML += `
+            <div class="bg-red-50 border-l-4 border-red-400 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                  </svg>
+                </div>
+                <div class="ml-3">
+                  <p class="text-sm text-red-700">✗ ${test.name}</p>
+                  <p class="text-sm text-red-600 mt-1">${error.message}</p>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      // Show final results
+      const statusDiv = document.getElementById('test-status');
+      const statusContent = document.getElementById('status-content');
+
+      statusDiv.classList.remove('hidden');
+      statusContent.innerHTML = `
+        <div class="grid grid-cols-3 gap-4 mb-4">
+          <div class="text-center">
+            <div class="text-2xl font-bold text-green-600">${passed}</div>
+            <div class="text-sm text-gray-600">Passed</div>
+          </div>
+          <div class="text-center">
+            <div class="text-2xl font-bold text-red-600">${failed}</div>
+            <div class="text-sm text-gray-600">Failed</div>
+          </div>
+          <div class="text-center">
+            <div class="text-2xl font-bold text-blue-600">${passed + failed}</div>
+            <div class="text-sm text-gray-600">Total</div>
+          </div>
+        </div>
+        ${failed === 0 ?
+          '<div class="bg-green-50 border-l-4 border-green-400 p-4"><p class="text-green-700">All tests passed! ✅</p></div>' :
+          '<div class="bg-red-50 border-l-4 border-red-400 p-4"><p class="text-red-700">Some tests failed. Please review the errors above.</p></div>'
+        }
+      `;
+    }
+
+    // Run tests when page loads
+    runTests().catch(error => {
+      console.error('Test runner failed:', error);
+      document.getElementById('test-results').innerHTML += `
+        <div class="bg-red-50 border-l-4 border-red-400 p-4">
+          <p class="text-red-700">Test runner failed: ${error.message}</p>
+        </div>
+      `;
+    });
+  </script>
+</body>
+</html>

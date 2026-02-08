@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tool Execution - Integration Tests</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <div class="max-w-4xl mx-auto p-6">
+    <header class="mb-8">
+      <h1 class="text-3xl font-bold text-gray-800 mb-2">Tool Execution - Integration Tests</h1>
+      <p class="text-gray-600">Testing end-to-end tool execution with sandboxing and permissions</p>
+    </header>
+
+    <div id="test-results" class="space-y-4">
+      <div class="bg-blue-50 border-l-4 border-blue-400 p-4">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+            </svg>
+          </div>
+          <div class="ml-3">
+            <p class="text-sm text-blue-700">
+              Running Tool Execution integration tests...
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="test-status" class="mt-8 hidden">
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">Test Results</h2>
+        <div id="status-content"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { ToolExecutor } from '../../../src/index.js';
+
+    // Test utilities
+    const tests = [];
+    let passed = 0;
+    let failed = 0;
+
+    function test(name, fn) {
+      tests.push({ name, fn });
+    }
+
+    function assert(condition, message) {
+      if (!condition) {
+        throw new Error(message);
+      }
+    }
+
+    function assertEqual(actual, expected, message) {
+      if (actual !== expected) {
+        throw new Error(`${message}: expected ${expected}, got ${actual}`);
+      }
+    }
+
+    // Mock tool registry for testing
+    const mockToolRegistry = {
+      'math-add': {
+        name: 'math-add',
+        version: 1,
+        func: 'async (args) => ({ result: args.a + args.b })',
+        permissions: []
+      },
+      'math-multiply': {
+        name: 'math-multiply',
+        version: 1,
+        func: 'async (args) => ({ result: args.a * args.b })',
+        permissions: []
+      },
+      'file-read': {
+        name: 'file-read',
+        version: 1,
+        func: 'async (args) => ({ content: `mock content of ${args.path}` })',
+        permissions: ['fs']
+      },
+      'network-fetch': {
+        name: 'network-fetch',
+        version: 1,
+        func: 'async (args) => ({ data: `mock response from ${args.url}` })',
+        permissions: ['network']
+      },
+      'ui-alert': {
+        name: 'ui-alert',
+        version: 1,
+        func: 'async (args) => ({ shown: true, message: args.message })',
+        permissions: ['ui']
+      },
+      'dangerous-tool': {
+        name: 'dangerous-tool',
+        version: 1,
+        func: 'async () => { window.location.href = "http://evil.com"; return "hacked"; }',
+        permissions: ['network']
+      }
+    };
+
+    // Test definitions
+    test('end-to-end math tool execution', async () => {
+      const executor = new ToolExecutor();
+      executor._getTool = (name) => mockToolRegistry[name];
+
+      const context = { permissions: [] };
+      const result = await executor.execute('math-add', { a: 5, b: 3 }, context);
+
+      assert(result.success, 'Math tool should execute successfully');
+      assertEqual(result.output.result, 8, 'Should return correct sum');
+      assert(result.duration >= 0, 'Should include execution duration');
+    });
+
+    test('multiple tool executions', async () => {
+      const executor = new ToolExecutor();
+      executor._getTool = (name) => mockToolRegistry[name];
+
+      const context = { permissions: [] };
+
+      // Execute add
+      const result1 = await executor.execute('math-add', { a: 10, b: 5 }, context);
+      assert(result1.success, 'First tool should succeed');
+      assertEqual(result1.output.result, 15, 'First result should be correct');
+
+      // Execute multiply
+      const result2 = await executor.execute('math-multiply', { a: 4, b: 3 }, context);
+      assert(result2.success, 'Second tool should succeed');
+      assertEqual(result2.output.result, 12, 'Second result should be correct');
+    });
+
+    test('file system permission enforcement', async () => {
+      const executor = new ToolExecutor();
+      executor._getTool = (name) => mockToolRegistry[name];
+
+      // Test without permission
+      const context1 = { permissions: [] };
+      const result1 = await executor.execute('file-read', { path: '/test.txt' }, context1);
+      assert(!result1.success, 'Should fail without fs permission');
+      assert(result1.error.includes('requires permissions'), 'Should indicate permission requirement');
+
+      // Test with permission
+      const context2 = { permissions: ['fs'] };
+      const result2 = await executor.execute('file-read', { path: '/test.txt' }, context2);
+      assert(result2.success, 'Should succeed with fs permission');
+      assert(result2.output.content.includes('/test.txt'), 'Should return mock file content');
+    });
+
+    test('network permission enforcement', async () => {
+      const executor = new ToolExecutor();
+      executor._getTool = (name) => mockToolRegistry[name];
+
+      // Test without permission
+      const context1 = { permissions: [] };
+      const result1 = await executor.execute('network-fetch', { url: 'http://api.example.com' }, context1);
+      assert(!result1.success, 'Should fail without network permission');
+
+      // Test with permission
+      const context2 = { permissions: ['network'] };
+      const result2 = await executor.execute('network-fetch', { url: 'http://api.example.com' }, context2);
+      assert(result2.success, 'Should succeed with network permission');
+      assert(result2.output.data.includes('api.example.com'), 'Should return mock network response');
+    });
+
+    test('UI permission enforcement', async () => {
+      const executor = new ToolExecutor();
+      executor._getTool = (name) => mockToolRegistry[name];
+
+      // Test without permission
+      const context1 = { permissions: [] };
+      const result1 = await executor.execute('ui-alert', { message: 'Hello!' }, context1);
+      assert(!result1.success, 'Should fail without ui permission');
+
+      // Test with permission
+      const context2 = { permissions: ['ui'] };
+      const result2 = await executor.execute('ui-alert', { message: 'Hello!' }, context2);
+      assert(result2.success, 'Should succeed with ui permission');
+      assertEqual(result2.output.message, 'Hello!', 'Should return correct message');
+    });
+
+    test('multiple permission requirements', async () => {
+      const executor = new ToolExecutor();
+      executor._getTool = (name) => mockToolRegistry[name];
+
+      // Create a tool that requires multiple permissions
+      const multiPermTool = {
+        name: 'multi-perm-tool',
+        version: 1,
+        func: 'async (args) => ({ result: "multi-permission success" })',
+        permissions: ['fs', 'network', 'ui']
+      };
+
+      executor._getTool = () => multiPermTool;
+
+      // Test with partial permissions
+      const context1 = { permissions: ['fs', 'network'] };
+      const result1 = await executor.execute('multi-perm-tool', {}, context1);
+      assert(!result1.success, 'Should fail with missing ui permission');
+
+      // Test with all permissions
+      const context2 = { permissions: ['fs', 'network', 'ui'] };
+      const result2 = await executor.execute('multi-perm-tool', {}, context2);
+      assert(result2.success, 'Should succeed with all required permissions');
+    });
+
+    test('sandbox security - dangerous code blocked', async () => {
+      const executor = new ToolExecutor();
+      executor._getTool = (name) => mockToolRegistry[name];
+
+      const context = { permissions: ['network'] };
+      const result = await executor.execute('dangerous-tool', {}, context);
+
+      // The dangerous tool should be blocked by the sandbox even with network permission
+      // because it tries to access window.location which is not allowed
+      assert(!result.success, 'Dangerous code should be blocked by sandbox');
+      assert(result.error.includes('not defined') || result.error.includes('blocked'),
+             'Should indicate sandbox restriction');
+    });
+
+    test('error handling - invalid tool function', async () => {
+      const executor = new ToolExecutor();
+      executor._getTool = () => ({
+        name: 'bad-tool',
+        version: 1,
+        func: 'invalid syntax {{{',
+        permissions: []
+      });
+
+      const context = { permissions: [] };
+      const result = await executor.execute('bad-tool', {}, context);
+
+      assert(!result.success, 'Should fail with invalid function syntax');
+      assert(result.error.includes('syntax') || result.error.includes('invalid'),
+             'Should indicate syntax error');
+    });
+
+    test('timeout handling', async () => {
+      const executor = new ToolExecutor({ timeout: 100 });
+      executor._getTool = () => ({
+        name: 'slow-tool',
+        version: 1,
+        func: 'async () => { await new Promise(resolve => setTimeout(resolve, 200)); return "done"; }',
+        permissions: []
+      });
+
+      const context = { permissions: [] };
+      const result = await executor.execute('slow-tool', {}, context);
+
+      assert(!result.success, 'Should fail on timeout');
+      assert(result.error.includes('timed out'), 'Should indicate timeout');
+    });
+
+    test('argument validation', async () => {
+      const executor = new ToolExecutor();
+      executor._getTool = (name) => mockToolRegistry[name];
+
+      const context = { permissions: [] };
+
+      // Test with missing required arguments
+      const result = await executor.execute('math-add', { a: 5 }, context);
+      // This should still work since the function doesn't validate args, but let's test the structure
+      assert(result.success, 'Should handle missing args gracefully');
+    });
+
+    // Run tests
+    async function runTests() {
+      const resultsDiv = document.getElementById('test-results');
+
+      for (const test of tests) {
+        try {
+          await test.fn();
+          passed++;
+          resultsDiv.innerHTML += `
+            <div class="bg-green-50 border-l-4 border-green-400 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                  </svg>
+                </div>
+                <div class="ml-3">
+                  <p class="text-sm text-green-700">✓ ${test.name}</p>
+                </div>
+              </div>
+            </div>
+          `;
+        } catch (error) {
+          failed++;
+          resultsDiv.innerHTML += `
+            <div class="bg-red-50 border-l-4 border-red-400 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                  </svg>
+                </div>
+                <div class="ml-3">
+                  <p class="text-sm text-red-700">✗ ${test.name}</p>
+                  <p class="text-sm text-red-600 mt-1">${error.message}</p>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      // Show final results
+      const statusDiv = document.getElementById('test-status');
+      const statusContent = document.getElementById('status-content');
+
+      statusDiv.classList.remove('hidden');
+      statusContent.innerHTML = `
+        <div class="grid grid-cols-3 gap-4 mb-4">
+          <div class="text-center">
+            <div class="text-2xl font-bold text-green-600">${passed}</div>
+            <div class="text-sm text-gray-600">Passed</div>
+          </div>
+          <div class="text-center">
+            <div class="text-2xl font-bold text-red-600">${failed}</div>
+            <div class="text-sm text-gray-600">Failed</div>
+          </div>
+          <div class="text-center">
+            <div class="text-2xl font-bold text-blue-600">${passed + failed}</div>
+            <div class="text-sm text-gray-600">Total</div>
+          </div>
+        </div>
+        ${failed === 0 ?
+          '<div class="bg-green-50 border-l-4 border-green-400 p-4"><p class="text-green-700">All tests passed! ✅</p></div>' :
+          '<div class="bg-red-50 border-l-4 border-red-400 p-4"><p class="text-red-700">Some tests failed. Please review the errors above.</p></div>'
+        }
+      `;
+    }
+
+    // Run tests when page loads
+    runTests().catch(error => {
+      console.error('Test runner failed:', error);
+      document.getElementById('test-results').innerHTML += `
+        <div class="bg-red-50 border-l-4 border-red-400 p-4">
+          <p class="text-red-700">Test runner failed: ${error.message}</p>
+        </div>
+      `;
+    });
+  </script>
+</body>
+</html>

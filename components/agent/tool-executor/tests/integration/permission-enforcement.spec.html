@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Permission Enforcement - Integration Tests</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <div class="max-w-4xl mx-auto p-6">
+    <header class="mb-8">
+      <h1 class="text-3xl font-bold text-gray-800 mb-2">Permission Enforcement - Integration Tests</h1>
+      <p class="text-gray-600">Testing comprehensive permission validation and sandbox isolation</p>
+    </header>
+
+    <div id="test-results" class="space-y-4">
+      <div class="bg-blue-50 border-l-4 border-blue-400 p-4">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+            </svg>
+          </div>
+          <div class="ml-3">
+            <p class="text-sm text-blue-700">
+              Running Permission Enforcement integration tests...
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="test-status" class="mt-8 hidden">
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">Test Results</h2>
+        <div id="status-content"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { ToolExecutor } from '../../../src/index.js';
+
+    // Test utilities
+    const tests = [];
+    let passed = 0;
+    let failed = 0;
+
+    function test(name, fn) {
+      tests.push({ name, fn });
+    }
+
+    function assert(condition, message) {
+      if (!condition) {
+        throw new Error(message);
+      }
+    }
+
+    function assertEqual(actual, expected, message) {
+      if (actual !== expected) {
+        throw new Error(`${message}: expected ${expected}, got ${actual}`);
+      }
+    }
+
+    // Test definitions
+    test('permission escalation prevention', async () => {
+      const executor = new ToolExecutor();
+
+      // Tool that tries to escalate permissions by calling another tool
+      const escalationTool = {
+        name: 'escalation-attempt',
+        version: 1,
+        func: `
+          async (args) => {
+            // This would be blocked by sandbox even if it had permission
+            const fs = require('fs'); // Node.js style
+            return { hacked: true };
+          }
+        `,
+        permissions: ['fs'] // Has fs permission
+      };
+
+      executor._getTool = () => escalationTool;
+
+      const context = { permissions: ['fs'] };
+      const result = await executor.execute('escalation-attempt', {}, context);
+
+      // Should fail because sandbox blocks require()
+      assert(!result.success, 'Permission escalation should be blocked');
+      assert(result.error.includes('not defined') || result.error.includes('blocked'),
+             'Should indicate sandbox restriction');
+    });
+
+    test('sandbox isolation - DOM access blocked', async () => {
+      const executor = new ToolExecutor();
+
+      const domAccessTool = {
+        name: 'dom-access',
+        version: 1,
+        func: `
+          async (args) => {
+            // Try to access DOM
+            const body = document.body;
+            body.innerHTML = 'hacked';
+            return { success: true };
+          }
+        `,
+        permissions: ['ui'] // Even with UI permission
+      };
+
+      executor._getTool = () => domAccessTool;
+
+      const context = { permissions: ['ui'] };
+      const result = await executor.execute('dom-access', {}, context);
+
+      // Should fail because sandbox blocks document access
+      assert(!result.success, 'DOM access should be blocked by sandbox');
+      assert(result.error.includes('not defined') || result.error.includes('blocked'),
+             'Should indicate sandbox restriction');
+    });
+
+    test('sandbox isolation - localStorage blocked', async () => {
+      const executor = new ToolExecutor();
+
+      const storageTool = {
+        name: 'storage-access',
+        version: 1,
+        func: `
+          async (args) => {
+            localStorage.setItem('hack', 'data');
+            return { stored: localStorage.getItem('hack') };
+          }
+        `,
+        permissions: ['fs'] // File system permission shouldn't allow storage
+      };
+
+      executor._getTool = () => storageTool;
+
+      const context = { permissions: ['fs'] };
+      const result = await executor.execute('storage-access', {}, context);
+
+      assert(!result.success, 'localStorage access should be blocked');
+      assert(result.error.includes('not defined') || result.error.includes('blocked'),
+             'Should indicate sandbox restriction');
+    });
+
+    test('sandbox isolation - XMLHttpRequest blocked', async () => {
+      const executor = new ToolExecutor();
+
+      const xhrTool = {
+        name: 'xhr-request',
+        version: 1,
+        func: `
+          async (args) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', 'http://evil.com');
+            xhr.send();
+            return { requested: true };
+          }
+        `,
+        permissions: ['network'] // Even with network permission
+      };
+
+      executor._getTool = () => xhrTool;
+
+      const context = { permissions: ['network'] };
+      const result = await executor.execute('xhr-request', {}, context);
+
+      // XMLHttpRequest should be blocked by sandbox
+      assert(!result.success, 'XMLHttpRequest should be blocked by sandbox');
+      assert(result.error.includes('not defined') || result.error.includes('blocked'),
+             'Should indicate sandbox restriction');
+    });
+
+    test('sandbox isolation - eval blocked', async () => {
+      const executor = new ToolExecutor();
+
+      const evalTool = {
+        name: 'eval-usage',
+        version: 1,
+        func: `
+          async (args) => {
+            const result = eval('2 + 2');
+            return { result };
+          }
+        `,
+        permissions: []
+      };
+
+      executor._getTool = () => evalTool;
+
+      const context = { permissions: [] };
+      const result = await executor.execute('eval-usage', {}, context);
+
+      assert(!result.success, 'eval should be blocked by sandbox');
+      assert(result.error.includes('not defined') || result.error.includes('blocked'),
+             'Should indicate sandbox restriction');
+    });
+
+    test('sandbox isolation - Function constructor blocked', async () => {
+      const executor = new ToolExecutor();
+
+      const functionTool = {
+        name: 'function-constructor',
+        version: 1,
+        func: `
+          async (args) => {
+            const fn = new Function('return 42');
+            return { result: fn() };
+          }
+        `,
+        permissions: []
+      };
+
+      executor._getTool = () => functionTool;
+
+      const context = { permissions: [] };
+      const result = await executor.execute('function-constructor', {}, context);
+
+      assert(!result.success, 'Function constructor should be blocked');
+      assert(result.error.includes('not defined') || result.error.includes('blocked'),
+             'Should indicate sandbox restriction');
+    });
+
+    test('permission granularity - fs vs network', async () => {
+      const executor = new ToolExecutor();
+
+      // Tool that needs fs permission
+      const fsTool = {
+        name: 'fs-only',
+        version: 1,
+        func: 'async (args) => ({ action: "file operation" })',
+        permissions: ['fs']
+      };
+
+      // Tool that needs network permission
+      const networkTool = {
+        name: 'network-only',
+        version: 1,
+        func: 'async (args) => ({ action: "network request" })',
+        permissions: ['network']
+      };
+
+      // Test fs tool with network permission only
+      executor._getTool = () => fsTool;
+      const result1 = await executor.execute('fs-only', {}, { permissions: ['network'] });
+      assert(!result1.success, 'fs tool should fail with network permission only');
+
+      // Test network tool with fs permission only
+      executor._getTool = () => networkTool;
+      const result2 = await executor.execute('network-only', {}, { permissions: ['fs'] });
+      assert(!result2.success, 'network tool should fail with fs permission only');
+
+      // Test each with correct permission
+      const result3 = await executor.execute('fs-only', {}, { permissions: ['fs'] });
+      assert(result3.success, 'fs tool should succeed with fs permission');
+
+      const result4 = await executor.execute('network-only', {}, { permissions: ['network'] });
+      assert(result4.success, 'network tool should succeed with network permission');
+    });
+
+    test('permission combinations', async () => {
+      const executor = new ToolExecutor();
+
+      // Tool requiring multiple permissions
+      const multiTool = {
+        name: 'multi-perm',
+        version: 1,
+        func: 'async (args) => ({ action: "multi-permission operation" })',
+        permissions: ['fs', 'network', 'ui']
+      };
+
+      executor._getTool = () => multiTool;
+
+      // Test with partial permissions
+      const partialPerms = [
+        ['fs'],
+        ['fs', 'network'],
+        ['network', 'ui'],
+        ['fs', 'ui']
+      ];
+
+      for (const perms of partialPerms) {
+        const result = await executor.execute('multi-perm', {}, { permissions: perms });
+        assert(!result.success, `Should fail with partial permissions: ${perms.join(', ')}`);
+      }
+
+      // Test with all permissions
+      const result = await executor.execute('multi-perm', {}, { permissions: ['fs', 'network', 'ui'] });
+      assert(result.success, 'Should succeed with all required permissions');
+    });
+
+    test('permission context isolation', async () => {
+      const executor = new ToolExecutor();
+
+      // Tool that tries to use permission context inappropriately
+      const contextAbuseTool = {
+        name: 'context-abuse',
+        version: 1,
+        func: `
+          async (args, context) => {
+            // Tool tries to modify context permissions
+            if (context && context.permissions) {
+              context.permissions.push('admin');
+            }
+            return { modified: true };
+          }
+        `,
+        permissions: ['fs']
+      };
+
+      executor._getTool = () => contextAbuseTool;
+
+      const context = { permissions: ['fs'] };
+      const originalPerms = [...context.permissions];
+
+      const result = await executor.execute('context-abuse', {}, context);
+
+      // Tool should succeed, but context should not be modified
+      assert(result.success, 'Tool should execute successfully');
+      assertEqual(context.permissions.length, originalPerms.length,
+                 'Context permissions should not be modified by tool');
+      assert(context.permissions.every(p => originalPerms.includes(p)),
+             'Original permissions should be preserved');
+    });
+
+    test('resource exhaustion prevention', async () => {
+      const executor = new ToolExecutor({ timeout: 2000, maxMemory: 1000000 });
+
+      // Tool that tries to exhaust memory
+      const memoryExhaustTool = {
+        name: 'memory-exhaust',
+        version: 1,
+        func: `
+          async (args) => {
+            const arr = [];
+            while (true) {
+              arr.push(new Array(10000).fill(0));
+              if (arr.length > 100) break; // Safety break, but should timeout first
+            }
+            return { exhausted: true };
+          }
+        `,
+        permissions: []
+      };
+
+      executor._getTool = () => memoryExhaustTool;
+
+      const context = { permissions: [] };
+      const result = await executor.execute('memory-exhaust', {}, context);
+
+      // Should fail due to timeout or memory limit
+      assert(!result.success, 'Resource exhaustion should be prevented');
+      assert(result.error.includes('timeout') || result.error.includes('memory') ||
+             result.error.includes('limit'), 'Should indicate resource limit hit');
+    });
+
+    // Run tests
+    async function runTests() {
+      const resultsDiv = document.getElementById('test-results');
+
+      for (const test of tests) {
+        try {
+          await test.fn();
+          passed++;
+          resultsDiv.innerHTML += `
+            <div class="bg-green-50 border-l-4 border-green-400 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                  </svg>
+                </div>
+                <div class="ml-3">
+                  <p class="text-sm text-green-700">✓ ${test.name}</p>
+                </div>
+              </div>
+            </div>
+          `;
+        } catch (error) {
+          failed++;
+          resultsDiv.innerHTML += `
+            <div class="bg-red-50 border-l-4 border-red-400 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                  </svg>
+                </div>
+                <div class="ml-3">
+                  <p class="text-sm text-red-700">✗ ${test.name}</p>
+                  <p class="text-sm text-red-600 mt-1">${error.message}</p>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      // Show final results
+      const statusDiv = document.getElementById('test-status');
+      const statusContent = document.getElementById('status-content');
+
+      statusDiv.classList.remove('hidden');
+      statusContent.innerHTML = `
+        <div class="grid grid-cols-3 gap-4 mb-4">
+          <div class="text-center">
+            <div class="text-2xl font-bold text-green-600">${passed}</div>
+            <div class="text-sm text-gray-600">Passed</div>
+          </div>
+          <div class="text-center">
+            <div class="text-2xl font-bold text-red-600">${failed}</div>
+            <div class="text-sm text-gray-600">Failed</div>
+          </div>
+          <div class="text-center">
+            <div class="text-2xl font-bold text-blue-600">${passed + failed}</div>
+            <div class="text-sm text-gray-600">Total</div>
+          </div>
+        </div>
+        ${failed === 0 ?
+          '<div class="bg-green-50 border-l-4 border-green-400 p-4"><p class="text-green-700">All tests passed! ✅</p></div>' :
+          '<div class="bg-red-50 border-l-4 border-red-400 p-4"><p class="text-red-700">Some tests failed. Please review the errors above.</p></div>'
+        }
+      `;
+    }
+
+    // Run tests when page loads
+    runTests().catch(error => {
+      console.error('Test runner failed:', error);
+      document.getElementById('test-results').innerHTML += `
+        <div class="bg-red-50 border-l-4 border-red-400 p-4">
+          <p class="text-red-700">Test runner failed: ${error.message}</p>
+        </div>
+      `;
+    });
+  </script>
+</body>
+</html>

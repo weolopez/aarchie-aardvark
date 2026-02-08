@@ -1,0 +1,32 @@
+{
+  "name": "@aardvark/tool-executor",
+  "version": "1.0.0",
+  "description": "Sandboxed tool execution environment with permission enforcement",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "test": "node run-tests.js --component tool-executor",
+    "test:unit": "node run-tests.js --component tool-executor --type unit",
+    "test:integration": "node run-tests.js --component tool-executor --type integration"
+  },
+  "keywords": [
+    "tool",
+    "execution",
+    "sandbox",
+    "security",
+    "permissions"
+  ],
+  "author": "Aardvark Development Team",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/weolopez/aarchie-aardvark.git",
+    "directory": "components/agent/tool-executor"
+  },
+  "bugs": {
+    "url": "https://github.com/weolopez/aarchie-aardvark/issues"
+  },
+  "homepage": "https://github.com/weolopez/aarchie-aardvark#readme"
+}

@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sandbox - Unit Tests</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <div class="max-w-4xl mx-auto p-6">
+    <header class="mb-8">
+      <h1 class="text-3xl font-bold text-gray-800 mb-2">Sandbox - Unit Tests</h1>
+      <p class="text-gray-600">Testing isolated JavaScript execution environment</p>
+    </header>
+
+    <div id="test-results" class="space-y-4">
+      <div class="bg-blue-50 border-l-4 border-blue-400 p-4">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+            </svg>
+          </div>
+          <div class="ml-3">
+            <p class="text-sm text-blue-700">
+              Running Sandbox unit tests...
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="test-status" class="mt-8 hidden">
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">Test Results</h2>
+        <div id="status-content"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { createSandbox, executeInSandbox } from '../../../src/sandbox.js';
+
+    // Test utilities
+    const tests = [];
+    let passed = 0;
+    let failed = 0;
+
+    function test(name, fn) {
+      tests.push({ name, fn });
+    }
+
+    function assert(condition, message) {
+      if (!condition) {
+        throw new Error(message);
+      }
+    }
+
+    function assertEqual(actual, expected, message) {
+      if (actual !== expected) {
+        throw new Error(`${message}: expected ${expected}, got ${actual}`);
+      }
+    }
+
+    function assertThrows(fn, message) {
+      try {
+        fn();
+        throw new Error(`${message}: expected function to throw`);
+      } catch (error) {
+        if (error.message === `${message}: expected function to throw`) {
+          throw error;
+        }
+        // Expected throw occurred
+      }
+    }
+
+    // Test definitions
+    test('createSandbox - basic creation', () => {
+      const sandbox = createSandbox();
+      assert(sandbox, 'Should create sandbox object');
+      assert(typeof sandbox.execute === 'function', 'Should have execute method');
+      assert(typeof sandbox.destroy === 'function', 'Should have destroy method');
+    });
+
+    test('createSandbox - with options', () => {
+      const sandbox = createSandbox({
+        timeout: 5000,
+        maxMemory: 1000000,
+        allowedGlobals: ['console', 'JSON']
+      });
+      assert(sandbox, 'Should create sandbox with options');
+    });
+
+    test('executeInSandbox - simple expression', async () => {
+      const result = await executeInSandbox('2 + 3');
+      assertEqual(result, 5, 'Should execute simple arithmetic');
+    });
+
+    test('executeInSandbox - function execution', async () => {
+      const result = await executeInSandbox('(() => "hello")()');
+      assertEqual(result, 'hello', 'Should execute function');
+    });
+
+    test('executeInSandbox - async function', async () => {
+      const result = await executeInSandbox('async () => await Promise.resolve("async")');
+      assertEqual(result, 'async', 'Should execute async function');
+    });
+
+    test('executeInSandbox - with arguments', async () => {
+      const result = await executeInSandbox('(args) => args.a + args.b', { a: 10, b: 20 });
+      assertEqual(result, 30, 'Should pass arguments correctly');
+    });
+
+    test('executeInSandbox - access to allowed globals', async () => {
+      const result = await executeInSandbox('JSON.stringify({test: "value"})');
+      assertEqual(result, '{"test":"value"}', 'Should allow JSON global');
+    });
+
+    test('executeInSandbox - restricted globals', async () => {
+      try {
+        await executeInSandbox('window.location.href');
+        throw new Error('Should have blocked window access');
+      } catch (error) {
+        assert(error.message.includes('not defined') || error.message.includes('blocked'),
+               'Should block restricted globals');
+      }
+    });
+
+    test('executeInSandbox - restricted APIs', async () => {
+      try {
+        await executeInSandbox('fetch("http://example.com")');
+        throw new Error('Should have blocked fetch');
+      } catch (error) {
+        assert(error.message.includes('not defined') || error.message.includes('blocked'),
+               'Should block restricted APIs');
+      }
+    });
+
+    test('executeInSandbox - timeout', async () => {
+      try {
+        await executeInSandbox('new Promise(resolve => setTimeout(resolve, 100))', {}, { timeout: 50 });
+        throw new Error('Should have timed out');
+      } catch (error) {
+        assert(error.message.includes('timeout') || error.message.includes('timed out'),
+               'Should timeout long-running code');
+      }
+    });
+
+    test('executeInSandbox - syntax error', async () => {
+      try {
+        await executeInSandbox('invalid syntax {{{');
+        throw new Error('Should have caught syntax error');
+      } catch (error) {
+        assert(error.message.includes('syntax') || error.message.includes('invalid'),
+               'Should catch syntax errors');
+      }
+    });
+
+    test('executeInSandbox - runtime error', async () => {
+      try {
+        await executeInSandbox('throw new Error("test error")');
+        throw new Error('Should have caught runtime error');
+      } catch (error) {
+        assert(error.message.includes('test error'),
+               'Should catch runtime errors');
+      }
+    });
+
+    test('executeInSandbox - memory limit', async () => {
+      try {
+        // Try to allocate large array
+        await executeInSandbox('new Array(1000000).fill(0)', {}, { maxMemory: 1000 });
+        throw new Error('Should have hit memory limit');
+      } catch (error) {
+        assert(error.message.includes('memory') || error.message.includes('limit'),
+               'Should enforce memory limits');
+      }
+    });
+
+    // Run tests
+    async function runTests() {
+      const resultsDiv = document.getElementById('test-results');
+
+      for (const test of tests) {
+        try {
+          await test.fn();
+          passed++;
+          resultsDiv.innerHTML += `
+            <div class="bg-green-50 border-l-4 border-green-400 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                  </svg>
+                </div>
+                <div class="ml-3">
+                  <p class="text-sm text-green-700">✓ ${test.name}</p>
+                </div>
+              </div>
+            </div>
+          `;
+        } catch (error) {
+          failed++;
+          resultsDiv.innerHTML += `
+            <div class="bg-red-50 border-l-4 border-red-400 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                  </svg>
+                </div>
+                <div class="ml-3">
+                  <p class="text-sm text-red-700">✗ ${test.name}</p>
+                  <p class="text-sm text-red-600 mt-1">${error.message}</p>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      // Show final results
+      const statusDiv = document.getElementById('test-status');
+      const statusContent = document.getElementById('status-content');
+
+      statusDiv.classList.remove('hidden');
+      statusContent.innerHTML = `
+        <div class="grid grid-cols-3 gap-4 mb-4">
+          <div class="text-center">
+            <div class="text-2xl font-bold text-green-600">${passed}</div>
+            <div class="text-sm text-gray-600">Passed</div>
+          </div>
+          <div class="text-center">
+            <div class="text-2xl font-bold text-red-600">${failed}</div>
+            <div class="text-sm text-gray-600">Failed</div>
+          </div>
+          <div class="text-center">
+            <div class="text-2xl font-bold text-blue-600">${passed + failed}</div>
+            <div class="text-sm text-gray-600">Total</div>
+          </div>
+        </div>
+        ${failed === 0 ?
+          '<div class="bg-green-50 border-l-4 border-green-400 p-4"><p class="text-green-700">All tests passed! ✅</p></div>' :
+          '<div class="bg-red-50 border-l-4 border-red-400 p-4"><p class="text-red-700">Some tests failed. Please review the errors above.</p></div>'
+        }
+      `;
+    }
+
+    // Run tests when page loads
+    runTests().catch(error => {
+      console.error('Test runner failed:', error);
+      document.getElementById('test-results').innerHTML += `
+        <div class="bg-red-50 border-l-4 border-red-400 p-4">
+          <p class="text-red-700">Test runner failed: ${error.message}</p>
+        </div>
+      `;
+    });
+  </script>
+</body>
+</html>
