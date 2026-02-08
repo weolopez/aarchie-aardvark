@@ -70,9 +70,13 @@ export const SystemEvents = {
   SYSTEM_ERROR: 'system:error',
   TOOL_CALL: 'tool:call',
   TOOL_RESULT: 'tool:result',
+  TOOL_PENDING: 'tool:pending',
+  TOOL_APPROVE: 'tool:approve',
   SESSION_UPDATE: 'session:update',
   STORAGE_CHANGE: 'storage:change',
-  UI_COMMAND: 'ui:command'
+  UI_COMMAND: 'ui:command',
+  UI_PREVIEW: 'ui:preview',
+  UI_APPROVE: 'ui:approve'
 };
 
 export const globalEventBus = new EventBus();

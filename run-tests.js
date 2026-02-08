@@ -12,10 +12,12 @@ const path = require('path');
 // Test files to run
 const testFiles = [
   'components/core/event-bus/tests/unit/event-bus.spec.html',
+  'components/core/event-bus/tests/unit/event-bus-migration.spec.html',
   'components/core/event-bus/tests/integration/cross-component.spec.html',
   'components/core/opfs-provider/tests/unit/opfs-provider.spec.html',
   'components/core/indexeddb-provider/tests/unit/indexeddb-provider.spec.html',
   'components/core/message-bridge/tests/unit/message-bridge.spec.html',
+  'components/core/message-bridge/tests/integration/tool-approval-flow.spec.html',
   'components/core/api-client/tests/unit/api-client.spec.html',
   'components/storage/tool-store/tests/unit/tool-store.spec.html',
   'components/storage/tool-store/tests/unit/skill-parser.spec.html',

@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MessageBridge Integration: Tool Approval Flow</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .test-pass { @apply bg-green-100 text-green-800 border-green-300; }
+    .test-fail { @apply bg-red-100 text-red-800 border-red-300; }
+    .test-running { @apply bg-blue-100 text-blue-800 border-blue-300; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen p-8">
+  <div class="max-w-4xl mx-auto">
+    <header class="mb-8">
+      <h1 class="text-3xl font-bold text-gray-800">MessageBridge Integration</h1>
+      <p class="text-gray-600 mt-2">Verifying Tool Approval & UI Preview Flow</p>
+    </header>
+
+    <div id="test-results" class="space-y-3"></div>
+    
+    <div class="mt-8 bg-gray-900 rounded-lg shadow-md p-6">
+      <div id="console-output" class="font-mono text-sm text-green-400 space-y-1 max-h-64 overflow-y-auto"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { EventBus, SystemEvents } from '../../../event-bus/src/index.js';
+    import { MessageBridgeMain } from '../../src/index.js';
+
+    // Simple Test Runner
+    const log = (msg, type = 'info') => {
+      const el = document.getElementById('console-output');
+      el.innerHTML += `<div class="${type === 'error' ? 'text-red-400' : 'text-green-400'}">[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+    };
+
+    const runTest = async (name, fn) => {
+      const container = document.getElementById('test-results');
+      const el = document.createElement('div');
+      el.className = 'test-running border-l-4 p-4 rounded bg-white shadow-sm';
+      el.innerHTML = `<span class="font-medium">${name}</span>`;
+      container.appendChild(el);
+
+      try {
+        await fn();
+        el.className = 'test-pass border-l-4 p-4 rounded bg-white shadow-sm';
+        el.innerHTML += ' <span class="float-right">✓ Passed</span>';
+        log(`✓ ${name}`, 'success');
+      } catch (error) {
+        el.className = 'test-fail border-l-4 p-4 rounded bg-white shadow-sm';
+        el.innerHTML += ` <span class="float-right">✗ Failed: ${error.message}</span>`;
+        log(`✗ ${name}: ${error.message}`, 'error');
+        throw error; // Rethrow to fail the suite
+      }
+    };
+
+    // Worker Script Blob
+    const workerScript = `
+      import { EventBus, SystemEvents } from 'http://localhost:8765/components/core/event-bus/src/index.js';
+      import { MessageBridgeWorker } from 'http://localhost:8765/components/core/message-bridge/src/index.js';
+
+      const eventBus = new EventBus();
+      const bridge = new MessageBridgeWorker({
+        eventBus,
+        forwardEvents: [
+          SystemEvents.TOOL_PENDING,
+          SystemEvents.UI_PREVIEW
+        ]
+      });
+
+      // Listen for Main -> Worker events
+      eventBus.subscribe(SystemEvents.TOOL_APPROVE, (data) => {
+        // Echo back confirmation or handle approval
+        console.log('[Worker] Received TOOL_APPROVE', data);
+        // We could simulate a result here
+      });
+
+      // Simulate sending a Tool Pending request after a delay
+      setTimeout(() => {
+        console.log('[Worker] Sending TOOL_PENDING');
+        eventBus.publish(SystemEvents.TOOL_PENDING, {
+          toolName: 'generated-tool',
+          code: 'function test() {}'
+        });
+      }, 500);
+
+      // Simulate sending a UI Preview request
+      setTimeout(() => {
+        console.log('[Worker] Sending UI_PREVIEW');
+        eventBus.publish(SystemEvents.UI_PREVIEW, {
+          component: 'Button',
+          props: { label: 'Click Me' }
+        });
+      }, 1000);
+    `;
+
+    const blob = new Blob([workerScript], { type: 'application/javascript' });
+    const workerUrl = URL.createObjectURL(blob);
+
+    // Run Tests
+    (async () => {
+      try {
+        await runTest('Tool Approval Flow Verification', async () => {
+          return new Promise(async (resolve, reject) => {
+            const eventBus = new EventBus();
+            const bridge = new MessageBridgeMain({
+              workerUrl,
+              eventBus,
+              forwardEvents: [
+                SystemEvents.TOOL_APPROVE,
+                SystemEvents.UI_APPROVE
+              ]
+            });
+
+            const receivedEvents = new Set();
+            const timeouts = [];
+
+            // Listen for Worker -> Main events
+            eventBus.subscribe(SystemEvents.TOOL_PENDING, (data) => {
+              log('Received TOOL_PENDING from worker');
+              if (data.toolName === 'generated-tool') {
+                receivedEvents.add(SystemEvents.TOOL_PENDING);
+                
+                // Simulate approval
+                log('Sending TOOL_APPROVE to worker');
+                eventBus.publish(SystemEvents.TOOL_APPROVE, { toolId: '123', status: 'approved' });
+              }
+            });
+
+            eventBus.subscribe(SystemEvents.UI_PREVIEW, (data) => {
+              log('Received UI_PREVIEW from worker');
+              if (data.component === 'Button') {
+                receivedEvents.add(SystemEvents.UI_PREVIEW);
+              }
+              
+              // Check if we're done
+              if (receivedEvents.has(SystemEvents.TOOL_PENDING) && 
+                  receivedEvents.has(SystemEvents.UI_PREVIEW)) {
+                
+                // Cleanup
+                timeouts.forEach(clearTimeout);
+                bridge.terminate();
+                URL.revokeObjectURL(workerUrl);
+                resolve();
+              }
+            });
+
+            // Start Bridge
+            await bridge.init();
+            log('Bridge initialized');
+
+            // Timeout
+            timeouts.push(setTimeout(() => {
+              bridge.terminate();
+              URL.revokeObjectURL(workerUrl);
+              reject(new Error('Timeout waiting for events'));
+            }, 5000));
+          });
+        });
+
+        // Report success to parent
+        const passEl = document.createElement('div');
+        passEl.id = 'status-badge';
+        passEl.textContent = 'All Tests Passed!';
+        passEl.style.display = 'none';
+        document.body.appendChild(passEl);
+        
+        // Populate result counters for run-tests.js scraper
+        const totalEl = document.createElement('div'); totalEl.id = 'total-count'; totalEl.textContent = '1';
+        const passedEl = document.createElement('div'); passedEl.id = 'pass-count'; passedEl.textContent = '1';
+        const failedEl = document.createElement('div'); failedEl.id = 'fail-count'; failedEl.textContent = '0';
+        document.body.append(totalEl, passedEl, failedEl);
+
+      } catch (e) {
+        console.error(e);
+      }
+    })();
+  </script>
+</body>
+</html>

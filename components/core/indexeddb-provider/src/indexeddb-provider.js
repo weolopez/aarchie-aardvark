@@ -345,6 +345,14 @@ export class IndexedDBProvider {
  */
 export const AardvarkSchema = [
   {
+    name: 'tools',
+    keyPath: 'id',
+    indexes: [
+      { name: 'name', keyPath: 'name', unique: true },
+      { name: 'type', keyPath: 'type', unique: false }
+    ]
+  },
+  {
     name: 'sessions',
     keyPath: 'sessionId',
     indexes: [

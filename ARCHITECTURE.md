@@ -5,24 +5,26 @@
 A browser-based coding agent that functions as an **intelligent runtime**. It combines LLM capabilities with a persistent JavaScript tool registry and a direct UI rendering channel. The agent runs entirely in a **Web Worker**, ensuring the main thread remains responsive for the UI.
 
 **Storage Strategy:**
-- **OPFS (Project Space)**: Strictly for repository source code and assets.
-- **IndexedDB (User Space)**: Global Tool Registry, Session trees, and System metadata.
+
+* **OPFS (Project Space)**: Strictly for repository source code and assets.
+* **IndexedDB (User Space)**: Global Tool Registry, Session trees, and System metadata.
 
 ## Context
 
 The agent enables developers to:
-- Load GitHub repositories into a local OPFS-backed filesystem.
-- Chat with an AI assistant that can read/write files and **generate live UI components**.
-- Create custom JavaScript tools that persist globally across different projects.
-- Maintain branching conversation histories.
+
+* Load GitHub repositories into a local OPFS-backed filesystem.
+* Chat with an AI assistant that can read/write files and **generate live UI components**.
+* Create custom JavaScript tools that persist globally across different projects.
+* Maintain branching conversation histories.
 
 ## Design Philosophy
 
-- **Registry-Based Execution**: Tools are first-class executable objects stored in IndexedDB, not static text files.
-- **Global Utility**: Tools are "installed" into the user's environment, available across multiple repositories.
-- **Agent as Runtime**: The agent doesn't just edit files; it emits events and code to the main thread to modify the UI in real-time.
-- **Security First**: Dynamic tools and UI components require user approval before execution/rendering.
-- **Zero-Latency Dispatch**: Tool definitions are loaded into memory on startup, eliminating file I/O during tool selection.
+* **Registry-Based Execution**: Tools are first-class executable objects stored in IndexedDB, not static text files.
+* **Global Utility**: Tools are "installed" into the user's environment, available across multiple repositories.
+* **Agent as Runtime**: The agent doesn't just edit files; it emits events and code to the main thread to modify the UI in real-time.
+* **Security First**: Dynamic tools and UI components require user approval before execution/rendering.
+* **Zero-Latency Dispatch**: Tool definitions are loaded into memory on startup, eliminating file I/O during tool selection.
 
 ---
 
@@ -37,7 +39,6 @@ graph TB
         PreviewEngine["Component Preview Engine"]
         SessionTreeUI["Session Tree UI"]
         ToolApprovalUI["Tool Approval UI"]
-        ExportUI["Export UI"]
     end
 
     subgraph Core["Core Layer"]
@@ -53,15 +54,11 @@ graph TB
         ToolRegistry["Tool Registry (Memory)"]
         SessionMgr["Session Manager"]
         ContextBuilder["Context Builder"]
-        Compaction["Compaction Engine"]
-        ExportMgr["Export Manager"]
     end
 
     subgraph Storage["Storage Layer"]
         RepoStore["Repo Store (OPFS)"]
         GlobalStore["Global Store (IndexedDB)"]
-        HistoryStore["History Store"]
-        SettingsStore["Settings Store"]
     end
 
     UI <--> EventBus
@@ -73,8 +70,7 @@ graph TB
     AgentCore -- Read/Write --> RepoStore
     
     AgentCore -- "Preview Events" --> PreviewEngine
-    
-    Storage --> Core
+
 ```
 
 ### Component Responsibilities
@@ -83,17 +79,12 @@ graph TB
 | --- | --- | --- |
 | **UI** | Chat UI | Renders chat interface. |
 |  | **Preview Engine** | **New**: Dynamically registers and renders Web Components sent by the Agent. |
-|  | Session Tree UI | Displays and navigates conversation branches. |
-|  | Tool Approval UI | Intercepts new tool definitions and component renders for user consent. |
-|  | Export UI | Handles session export to various formats. |
-| **Core** | Event Bus | Central pub/sub messaging system. |
-|  | Message Bridge | Handles communication (Worker ↔ Main). |
-|  | API Client | Manages communication with LLM providers. |
+|  | Tool Approval | Intercepts new tool definitions and component renders for user consent. |
+| **Core** | Message Bridge | Handles communication (Worker <-> Main). |
 | **Storage** | **Repo Store** | Manages project source code (OPFS). |
 |  | **Global Store** | **New**: Stores the `tools` registry and `sessions` (IndexedDB). |
 | **Agent** | **Tool Registry** | **New**: In-memory map of executable functions, hydrated from IndexedDB. |
 |  | Agent Core | Manages the LLM loop and orchestrates tool execution. |
-|  | Session Manager | Manages conversation state and branching. |
 
 ---
 
@@ -134,6 +125,7 @@ flowchart TB
     
     Executor -->|7. Execute| Scope
     Scope -->|8. Result| AgentCore
+
 ```
 
 ### Component Descriptions
@@ -158,6 +150,7 @@ flowchart TB
 1. Receives HTML/JS string.
 2. Encapsulates it (Shadow DOM or `customElements.define`).
 3. Mounts it to the chat stream or a dedicated preview panel.
+
 
 
 ---
@@ -194,6 +187,7 @@ Tools are stored as structured objects in the `tools` store of IndexedDB.
   permissions: ["network"],  // "network", "fs", "ui"
   created: "2026-02-08T10:00:00Z"
 }
+
 ```
 
 ### Session Schema (IndexedDB)
@@ -206,6 +200,7 @@ Remains similar, but `toolCalls` now reference the Registry ID.
   root: { ... },
   // ... standard tree structure
 }
+
 ```
 
 ### OPFS Structure
@@ -219,6 +214,7 @@ OPFS Root
         ├── src/
         ├── package.json
         └── ...
+
 ```
 
 ---
@@ -235,21 +231,22 @@ sequenceDiagram
     participant Registry as Tool Registry
     participant DB as IndexedDB
     
-    User->>UI: "Create a tool to fetch crypto prices"
-    UI->>Agent: chat(message)
+    User-&gt;&gt;UI: "Create a tool to fetch crypto prices"
+    UI-&gt;&gt;Agent: chat(message)
     
-    Agent->>Agent: LLM generates JSON Tool Definition
-    Agent->>DB: put('pending_tools', toolObj)
+    Agent-&gt;&gt;Agent: LLM generates JSON Tool Definition
+    Agent-&gt;&gt;DB: put('pending_tools', toolObj)
     
-    Agent-->>UI: postMessage('tool_pending', toolObj)
+    Agent--&gt;&gt;UI: postMessage('tool_pending', toolObj)
     
-    User->>UI: Approve
-    UI->>Agent: postMessage('approve_tool', {id})
+    User-&gt;&gt;UI: Approve
+    UI-&gt;&gt;Agent: postMessage('approve_tool', {id})
     
-    Agent->>DB: move(pending -> tools)
-    Agent->>Registry: Map.set(tool.name, new Function(tool.func))
+    Agent-&gt;&gt;DB: move(pending -&gt; tools)
+    Agent-&gt;&gt;Registry: Map.set(tool.name, new Function(tool.func))
     
-    Agent-->>UI: "Tool 'fetch_crypto' installed globally."
+    Agent--&gt;&gt;UI: "Tool 'fetch_crypto' installed globally."
+
 ```
 
 ### 2. Self-Modifying UI Flow (Component Generation)
@@ -261,21 +258,22 @@ sequenceDiagram
     participant Agent as Agent (Worker)
     participant OPFS as Repo Storage
     
-    User->>UI: "Make a dashboard widget for this data"
-    UI->>Agent: chat(message)
+    User-&gt;&gt;UI: "Make a dashboard widget for this data"
+    UI-&gt;&gt;Agent: chat(message)
     
-    Agent->>Agent: LLM Generates Component Code
+    Agent-&gt;&gt;Agent: LLM Generates Component Code
     
     par Persistence
-        Agent->>OPFS: Write 'src/components/Dashboard.js'
+        Agent-&gt;&gt;OPFS: Write 'src/components/Dashboard.js'
     and Live Preview
-        Agent-->>UI: postMessage('preview_component', { code, tag: 'my-dashboard' })
+        Agent--&gt;&gt;UI: postMessage('preview_component', { code, tag: 'my-dashboard' })
     end
     
-    UI->>UI: customElements.define('my-dashboard', ...)
-    UI->>UI: Render <my-dashboard> in Chat
+    UI-&gt;&gt;UI: customElements.define('my-dashboard', ...)
+    UI-&gt;&gt;UI: Render &lt;my-dashboard&gt; in Chat
     
-    UI-->>User: Visual Component appears instantly
+    UI--&gt;&gt;User: Visual Component appears instantly
+
 ```
 
 ---
@@ -309,6 +307,8 @@ sequenceDiagram
 * **Risk**: The `preview_component` channel allows the LLM to execute code on the Main Thread.
 * **Mitigation**: Generated components should be rendered inside a **Shadow DOM** with `closed` mode, or strictly sanitized if not using Web Components.
 * **Policy**: The agent should never automatically execute a UI component. The UI must present a "Render Preview" button for the user to click (Human-in-the-loop).
+
+
 
 ## Future Enhancements
 

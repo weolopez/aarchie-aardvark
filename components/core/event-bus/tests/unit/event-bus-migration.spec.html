@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EventBus Migration Tests (Registry & UI Support)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .test-pass { @apply bg-green-100 text-green-800 border-green-300; }
+    .test-fail { @apply bg-red-100 text-red-800 border-red-300; }
+    .test-running { @apply bg-blue-100 text-blue-800 border-blue-300; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen p-8">
+  <div class="max-w-4xl mx-auto">
+    <header class="mb-8">
+      <h1 class="text-3xl font-bold text-gray-800">EventBus Migration Tests</h1>
+      <p class="text-gray-600 mt-2">Verification for Registry & UI Support Events</p>
+    </header>
+
+    <!-- Test Summary -->
+    <div id="summary" class="bg-white rounded-lg shadow-md p-6 mb-6">
+      <div class="flex justify-between items-center">
+        <div>
+          <span class="text-gray-600">Total Tests:</span>
+          <span id="total-count" class="text-2xl font-bold text-gray-800 ml-2">0</span>
+        </div>
+        <div>
+          <span class="text-green-600">Passed:</span>
+          <span id="pass-count" class="text-2xl font-bold text-green-600 ml-2">0</span>
+        </div>
+        <div>
+          <span class="text-red-600">Failed:</span>
+          <span id="fail-count" class="text-2xl font-bold text-red-600 ml-2">0</span>
+        </div>
+        <div id="status-badge" class="px-4 py-2 rounded-full text-sm font-semibold bg-gray-200 text-gray-700">
+          Running...
+        </div>
+      </div>
+    </div>
+
+    <!-- Test Results -->
+    <div id="test-results" class="space-y-3">
+      <!-- Tests will be inserted here -->
+    </div>
+
+    <!-- Console Output -->
+    <div class="mt-8 bg-gray-900 rounded-lg shadow-md p-6">
+      <h2 class="text-lg font-semibold text-gray-300 mb-4">Console Output</h2>
+      <div id="console-output" class="font-mono text-sm text-green-400 space-y-1 max-h-64 overflow-y-auto">
+        <div class="text-gray-500">Test execution started...</div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { EventBus, SystemEvents } from '../../src/index.js';
+
+    // Test Framework
+    class TestRunner {
+      constructor() {
+        this.tests = [];
+        this.results = [];
+        this.passCount = 0;
+        this.failCount = 0;
+      }
+
+      test(name, fn) {
+        this.tests.push({ name, fn });
+      }
+
+      async runAll() {
+        for (const test of this.tests) {
+          await this.runTest(test);
+        }
+        this.showSummary();
+      }
+
+      async runTest(test) {
+        const resultEl = this.createResultElement(test.name);
+        
+        try {
+          await test.fn();
+          this.passCount++;
+          this.markPassed(resultEl);
+          this.log(`✓ ${test.name}`, 'success');
+        } catch (error) {
+          this.failCount++;
+          this.markFailed(resultEl, error);
+          this.log(`✗ ${test.name}: ${error.message}`, 'error');
+        }
+      }
+
+      createResultElement(name) {
+        const container = document.getElementById('test-results');
+        const el = document.createElement('div');
+        el.className = 'test-running border-l-4 p-4 rounded bg-white shadow-sm';
+        el.innerHTML = `
+          <div class="flex items-center">
+            <span class="test-status mr-3">⏳</span>
+            <span class="font-medium">${name}</span>
+          </div>
+          <div class="test-error mt-2 text-sm text-red-600 hidden"></div>
+        `;
+        container.appendChild(el);
+        return el;
+      }
+
+      markPassed(el) {
+        el.className = 'test-pass border-l-4 p-4 rounded bg-white shadow-sm';
+        el.querySelector('.test-status').textContent = '✓';
+      }
+
+      markFailed(el, error) {
+        el.className = 'test-fail border-l-4 p-4 rounded bg-white shadow-sm';
+        el.querySelector('.test-status').textContent = '✗';
+        const errorEl = el.querySelector('.test-error');
+        errorEl.textContent = error.message;
+        errorEl.classList.remove('hidden');
+      }
+
+      log(message, type = 'info') {
+        const consoleEl = document.getElementById('console-output');
+        const line = document.createElement('div');
+        const timestamp = new Date().toLocaleTimeString();
+        
+        if (type === 'error') {
+          line.className = 'text-red-400';
+        } else if (type === 'success') {
+          line.className = 'text-green-400';
+        } else {
+          line.className = 'text-gray-400';
+        }
+        
+        line.textContent = `[${timestamp}] ${message}`;
+        consoleEl.appendChild(line);
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+      }
+
+      showSummary() {
+        document.getElementById('total-count').textContent = this.tests.length;
+        document.getElementById('pass-count').textContent = this.passCount;
+        document.getElementById('fail-count').textContent = this.failCount;
+        
+        const badge = document.getElementById('status-badge');
+        if (this.failCount === 0) {
+          badge.className = 'px-4 py-2 rounded-full text-sm font-semibold bg-green-100 text-green-800';
+          badge.textContent = 'All Tests Passed!';
+        } else {
+          badge.className = 'px-4 py-2 rounded-full text-sm font-semibold bg-red-100 text-red-800';
+          badge.textContent = `${this.failCount} Tests Failed`;
+        }
+        
+        this.log(`\nTest run complete: ${this.passCount}/${this.tests.length} passed`, 
+          this.failCount === 0 ? 'success' : 'error');
+      }
+    }
+
+    // Assertions
+    function assertEqual(actual, expected, message) {
+      if (actual !== expected) {
+        throw new Error(`${message || 'Assertion failed'}: expected ${expected}, got ${actual}`);
+      }
+    }
+
+    // Define Tests
+    const runner = new TestRunner();
+
+    // Test 1: Verify New Constants
+    runner.test('New SystemEvents constants are defined', () => {
+      assertEqual(SystemEvents.TOOL_PENDING, 'tool:pending', 'TOOL_PENDING should be defined');
+      assertEqual(SystemEvents.TOOL_APPROVE, 'tool:approve', 'TOOL_APPROVE should be defined');
+      assertEqual(SystemEvents.UI_PREVIEW, 'ui:preview', 'UI_PREVIEW should be defined');
+      assertEqual(SystemEvents.UI_APPROVE, 'ui:approve', 'UI_APPROVE should be defined');
+    });
+
+    // Test 2: Tool Pending Event Flow
+    runner.test('Tool Pending Event Flow', () => {
+      const bus = new EventBus();
+      let received = null;
+      bus.subscribe(SystemEvents.TOOL_PENDING, (data) => { received = data; });
+      
+      const payload = { toolName: 'test-tool', code: '...' };
+      bus.publish(SystemEvents.TOOL_PENDING, payload);
+      
+      assertEqual(received.toolName, 'test-tool', 'Tool name should match');
+    });
+
+    // Test 3: Tool Approve Event Flow
+    runner.test('Tool Approve Event Flow', () => {
+      const bus = new EventBus();
+      let received = null;
+      bus.subscribe(SystemEvents.TOOL_APPROVE, (data) => { received = data; });
+      
+      const payload = { toolId: '123' };
+      bus.publish(SystemEvents.TOOL_APPROVE, payload);
+      
+      assertEqual(received.toolId, '123', 'Tool ID should match');
+    });
+
+    // Test 4: UI Preview Event Flow
+    runner.test('UI Preview Event Flow', () => {
+      const bus = new EventBus();
+      let received = null;
+      bus.subscribe(SystemEvents.UI_PREVIEW, (data) => { received = data; });
+      
+      const payload = { component: 'Button', props: {} };
+      bus.publish(SystemEvents.UI_PREVIEW, payload);
+      
+      assertEqual(received.component, 'Button', 'Component name should match');
+    });
+
+    // Run all tests
+    runner.runAll();
+  </script>
+</body>
+</html>

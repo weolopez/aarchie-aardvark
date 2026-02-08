@@ -87,9 +87,12 @@ Visual components with reactive rendering:
 - `preview-engine`: Dynamic component renderer
 
 **3. Tool Components (Registry Objects)**
-Executable functions stored in IndexedDB:
-- System Tools: `read`, `write`, `edit` (Built-in)
-- User Tools: Custom scripts (e.g., `fetch_weather`)
+Executable functions stored in IndexedDB and hydrated at runtime:
+- **Storage**: JSON objects in `tools` store (source code + metadata).
+- **Runtime**: `new Function()` creation in the Worker.
+- **Types**:
+    - System Tools: Built-in capabilities (read, write).
+    - User Tools: Custom logic created by the user (e.g., `fetch_weather`).
 
 ---
 
@@ -176,7 +179,10 @@ The architecture relies on a strict message-passing protocol.
 - `chat`: User message input.
 - `tool_request`: Agent requesting capability.
 - `tool_result`: Output from executed tool.
+- `tool_pending`: Agent requesting to save a new tool.
+- `approve_tool`: User authorizing a new tool.
 - `preview_component`: Agent sending UI code to render.
+- `approve_preview`: User authorizing UI code execution.
 - `step`: Streaming token/status update.
 
 ---
