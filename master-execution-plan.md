@@ -2,11 +2,11 @@
 
 ## Executive Summary
 
-This plan provides a complete roadmap from the current Phase 1 foundation to a fully functional browser-based coding agent as defined in ARCHITECTURE.md. The system uses a composable component architecture with Rust/WASM core logic, vanilla JavaScript tooling, and web-native storage (OPFS + IndexedDB).
+This plan provides a complete roadmap from the current Phase 1 foundation to a fully functional browser-based coding agent as defined in ARCHITECTURE.md. The system uses a composable component architecture with JavaScript Web Worker agent logic, registry-based tool system, and web-native storage (OPFS + IndexedDB).
 
 **Current Status:** Phase 1 Complete (5 core infrastructure components)
 **Total Phases:** 6 phases
-**Estimated Timeline:** 10-12 weeks
+**Estimated Timeline:** 8-10 weeks
 **Team Size:** 1-2 developers
 
 ---
@@ -23,22 +23,22 @@ This plan provides a complete roadmap from the current Phase 1 foundation to a f
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │  PHASE 2: Storage Layer (Weeks 4-5)                            │
-│  High-level storage abstractions on top of core providers      │
+│  File Store (OPFS repos), Global Store (IndexedDB tools/sessions) │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │  PHASE 3: Tool System (Weeks 6-7)                              │
-│  Built-in tools, tool runner, dynamic tool support             │
+│  Tool Registry (in-memory), Tool Executor, Built-in Tools      │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│  PHASE 4: Rust/WASM Agent Core (Weeks 8-9)                     │
-│  Agent logic, session management, LLM integration              │
+│  PHASE 4: Agent Core (Weeks 8-9)                               │
+│  JavaScript Web Worker, LLM integration, Session Management    │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │  PHASE 5: UI Components (Weeks 10-11)                          │
-│  Chat interface, session tree, tool approval UI                │
+│  Lit HTML Web Components: Chat, Session Tree, Tool Approval    │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
@@ -46,6 +46,74 @@ This plan provides a complete roadmap from the current Phase 1 foundation to a f
 │  System integration, testing, optimization, deployment         │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Technology Stack
+
+### Core Runtime
+- **JavaScript Web Worker**
+- **Native ES Modules**
+- No Transpilers (TypeScript optional, currently pure JS)
+- No Bundlers (Rollup/Webpack)
+
+### UI Layer
+- **Lit HTML** (Web Components via CDN)
+- **Tailwind CSS** (via CDN for utility classes)
+- **Vanilla JavaScript** (ES2020+)
+- Shadow DOM for style encapsulation
+- Standard Web Platform APIs
+- **No React** / Frameworks
+- Composable via custom elements
+
+### Storage Strategy
+- **OPFS (Project Space)**: Strictly for repository source code and assets.
+- **IndexedDB (User Space)**: Global Tool Registry, Session trees, and System metadata.
+
+### Build System
+- **None required** for development (Native ES Modules)
+- Optional minification for production
+- No complex build pipelines
+
+---
+
+## Architecture Principles
+
+### 1. Agent in Web Worker
+All agent logic runs in a dedicated Web Worker to keep the UI responsive:
+- LLM API communication
+- Session management
+- Tool execution (Sandboxed)
+- Context compaction
+
+**Why**: Performance, non-blocking UI, security isolation.
+
+### 2. Registry-Based Tool System
+Tools are first-class objects stored in IndexedDB, not static files:
+- Loaded into memory map at startup
+- Zero-latency lookup
+- Global availability across projects
+
+**Why**: Speed, portability, and "install once, use everywhere" capability.
+
+### 3. JavaScript for Everything
+Unified language for UI, Logic, and Tools:
+- UI: Web Components (Lit)
+- Logic: Agent Core (Worker)
+- Tools: Async Functions
+
+**Why**: Consistency, ease of contribution, no context switching.
+
+### 4. Minimal Dependencies
+Allowed:
+- Lit (UI rendering)
+- Tailwind (Styling)
+- IDB-Keyval (IndexedDB wrapper)
+- Marked (Markdown rendering)
+
+Not allowed:
+- Heavy frameworks (React, Angular)
+- Complex build tools
 
 ---
 
@@ -77,14 +145,42 @@ This plan provides a complete roadmap from the current Phase 1 foundation to a f
 - [x] Interactive demos for each component
 - [x] Documentation complete
 
+## Phase 1: Core Infrastructure ✓ COMPLETE
+
+**Status:** DONE  
+**Duration:** 3 weeks  
+**Components:** 5/5 complete
+
+### Completed Components
+
+| Component | Status | Tests | Demo | Docs |
+|-----------|--------|-------|------|------|
+| Event Bus | ✅ Complete | ✅ 14 tests | ✅ Interactive | ✅ README |
+| OPFS Provider | ✅ Complete | ✅ 10 tests | ✅ File browser | ✅ README |
+| IndexedDB Provider | ✅ Complete | ✅ 9 tests | ✅ Data browser | ✅ README |
+| Message Bridge | ✅ Complete | ✅ 8 tests | ✅ Worker demo | ✅ README |
+| API Client | ✅ Complete | ✅ 12 tests | ✅ Chat demo | ✅ README |
+
+### Integration Tests
+- ✅ 12 cross-component integration tests
+- ✅ 5 performance benchmarks
+- ✅ Browser compatibility verification
+
+### Deliverables
+- [x] All 5 core components implemented
+- [x] Unit tests for each component (>90% coverage)
+- [x] Integration tests passing
+- [x] Interactive demos for each component
+- [x] Documentation complete
+
 ---
 
-## Phase 2: Storage Components
+## Phase 2: Storage Layer
 
 **Status:** NOT STARTED  
 **Duration:** 2 weeks (Weeks 4-5)  
 **Dependencies:** Phase 1  
-**Goal:** Build high-level storage abstractions
+**Goal:** Build high-level storage abstractions for repos, tools, and sessions
 
 ### 2.1 File Store
 
@@ -109,7 +205,7 @@ interface FileStore {
   walk(repo: string, path: string): Promise<string[]>;
   
   // GitHub integration
-  loadFromGitHub(repo: string, owner: string, repo: string): Promise<void>;
+  loadFromGitHub(owner: string, repo: string): Promise<void>;
 }
 ```
 
@@ -142,160 +238,85 @@ components/storage/file-store/
 - Day 4: Multi-repo support
 - Day 5: Tests and documentation
 
-### 2.2 Session Store
+### 2.2 Global Store
 
-**Purpose:** Session tree persistence and management
+**Purpose:** IndexedDB storage for tools and sessions
 
 **Interface:**
 ```javascript
-interface SessionStore {
-  // Session CRUD
-  createSession(metadata: SessionMetadata): Promise<string>;
+interface GlobalStore {
+  // Tool Registry
+  saveTool(tool: Tool): Promise<void>;
+  getTool(id: string): Promise<Tool>;
+  listTools(): Promise<Tool[]>;
+  deleteTool(id: string): Promise<void>;
+  
+  // Pending Tools (for approval)
+  savePendingTool(tool: PendingTool): Promise<string>;
+  getPendingTool(id: string): Promise<PendingTool>;
+  listPendingTools(): Promise<PendingTool[]>;
+  approvePendingTool(id: string): Promise<void>;
+  rejectPendingTool(id: string): Promise<void>;
+  
+  // Sessions
+  saveSession(session: Session): Promise<void>;
   getSession(sessionId: string): Promise<Session>;
-  updateSession(sessionId: string, updates: Partial<Session>): Promise<void>;
-  deleteSession(sessionId: string): Promise<void>;
   listSessions(): Promise<SessionSummary[]>;
-  
-  // Node operations
-  addNode(sessionId: string, parentId: string, node: Node): Promise<string>;
-  updateNode(sessionId: string, nodeId: string, updates: Partial<Node>): Promise<void>;
-  getNode(sessionId: string, nodeId: string): Promise<Node>;
-  getPath(sessionId: string, nodeId: string): Promise<Node[]>;
-  
-  // Tree operations
-  getTree(sessionId: string): Promise<SessionTree>;
-  getHistory(sessionId: string, nodeId: string): Promise<Node[]>;
-  branch(sessionId: string, fromNodeId: string): Promise<string>;
+  deleteSession(sessionId: string): Promise<void>;
 }
 
-interface Session {
-  sessionId: string;
-  name: string;
-  repo?: string;
-  root: Node;
-  currentNodeId: string;
-  created: number;
-  modified: number;
-}
-
-interface Node {
+interface Tool {
   id: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  parentId?: string;
-  children: string[];
-  toolCalls?: ToolCall[];
-  timestamp: number;
+  name: string;
+  version: number;
+  func: string; // JavaScript function as string
+  schema: object; // JSON Schema for parameters
+  type: 'system' | 'user';
+  permissions: string[];
+  created: string;
+}
+
+interface PendingTool extends Tool {
+  status: 'pending' | 'approved' | 'rejected';
 }
 ```
 
 **Features:**
-- Hierarchical session trees
-- Branching support
-- History reconstruction
-- Event notifications
+- Tool registry persistence
+- Session tree storage
+- Pending tool approval queue
+- IndexedDB transactions
 
 **Week 4, Days 6-10:**
-- Day 6: Basic CRUD operations
-- Day 7: Tree and path operations
-- Day 8: Branching support
-- Day 9: History reconstruction
+- Day 6: Tool CRUD operations
+- Day 7: Session storage
+- Day 8: Pending tool management
+- Day 9: Transaction handling
 - Day 10: Tests and documentation
 
-### 2.3 Tool Store
+### 2.3 Settings Store
 
-**Purpose:** Tool definitions and pending approvals
-
-**Interface:**
-```javascript
-interface ToolStore {
-  // Tool discovery
-  scanTools(repo: string): Promise<ToolDefinition[]>;
-  getTool(repo: string, name: string): Promise<ToolDefinition>;
-  
-  // Pending tools (approval queue)
-  addPendingTool(tool: PendingTool): Promise<string>;
-  getPendingTool(toolId: string): Promise<PendingTool>;
-  listPendingTools(): Promise<PendingTool[]>;
-  approveTool(toolId: string): Promise<void>;
-  rejectTool(toolId: string): Promise<void>;
-  
-  // SKILL.md parsing
-  parseSkillMd(content: string): Promise<{ frontmatter: object, instructions: string }>;
-}
-
-interface ToolDefinition {
-  name: string;
-  description: string;
-  parameters: JsonSchema;
-  allowedTools: string[];
-  version: string;
-  repo: string;
-  skillMdPath: string;
-}
-
-interface PendingTool {
-  toolId: string;
-  name: string;
-  description: string;
-  skillMdContent: string;
-  status: 'pending' | 'approved' | 'rejected';
-  created: number;
-  requestedBy: 'llm' | 'user';
-}
-```
-
-**Features:**
-- OPFS .tools/ directory scanning
-- SKILL.md parsing (YAML frontmatter + markdown)
-- Approval workflow
-- Tool versioning
-
-**Week 5, Days 1-5:**
-- Day 1: Tool scanning from OPFS
-- Day 2: SKILL.md parser
-- Day 3: Pending approval system
-- Day 4: Tool registry caching
-- Day 5: Tests and documentation
-
-### 2.4 History Store
-
-**Purpose:** Tool execution history
+**Purpose:** User preferences and configuration
 
 **Interface:**
 ```javascript
-interface HistoryStore {
-  recordExecution(record: ExecutionRecord): Promise<void>;
-  getExecutions(sessionId: string, options?: QueryOptions): Promise<ExecutionRecord[]>;
-  getExecution(executionId: string): Promise<ExecutionRecord>;
-  getStats(sessionId: string): Promise<ExecutionStats>;
-}
-
-interface ExecutionRecord {
-  executionId: string;
-  sessionId: string;
-  nodeId: string;
-  toolName: string;
-  arguments: object;
-  result: ToolResult;
-  timestamp: number;
-  duration: number;
+interface SettingsStore {
+  get(key: string): Promise<any>;
+  set(key: string, value: any): Promise<void>;
+  getAll(): Promise<object>;
 }
 ```
 
-**Week 5, Days 6-10:**
-- Day 6: Basic recording
-- Day 7: Querying and filtering
-- Day 8: Statistics aggregation
-- Day 9: Tests
-- Day 10: Documentation and demos
+**Week 5, Days 1-2:**
+- Basic key-value storage
+- Default settings
+- Type validation
 
 ### Phase 2 Deliverables
 
 - [ ] File Store with GitHub integration
-- [ ] Session Store with branching
-- [ ] Tool Store with SKILL.md support
-- [ ] History Store
+- [ ] Global Store for tools and sessions
+- [ ] Settings Store
 - [ ] All components tested
 - [ ] Interactive demos
 - [ ] Documentation
@@ -307,371 +328,394 @@ interface ExecutionRecord {
 **Status:** NOT STARTED  
 **Duration:** 2 weeks (Weeks 6-7)  
 **Dependencies:** Phase 2  
-**Goal:** Implement tool execution system
+**Goal:** Implement registry-based tool system
 
-### 3.1 Built-in Tools
+### 3.1 Tool Registry
 
-**Tools to Implement:**
-
-#### read-tool
-```javascript
-// Read file contents with line numbers
-read({ path: string, offset?: number, limit?: number }): Promise<string>
-```
-
-#### write-tool
-```javascript
-// Write or overwrite file
-write({ path: string, content: string }): Promise<void>
-```
-
-#### edit-tool
-```javascript
-// Surgical find-and-replace
-edit({ path: string, oldText: string, newText: string }): Promise<void>
-```
-
-#### ls-tool
-```javascript
-// List directory contents
-ls({ path: string, detailed?: boolean }): Promise<string>
-```
-
-#### grep-tool
-```javascript
-// Search file contents
-grep({ pattern: string, path?: string, ignoreCase?: boolean }): Promise<string>
-```
-
-#### find-tool
-```javascript
-// Find files by pattern
-find({ pattern: string, path?: string }): Promise<string[]>
-```
-
-#### js-tool
-```javascript
-// Execute JavaScript code
-js({ code: string }): Promise<any>
-// Available globals: read, write, grep, find, console
-```
-
-**Week 6:**
-- Days 1-2: read, write, edit tools
-- Days 3-4: ls, grep, find tools
-- Day 5: js tool
-
-### 3.2 Tool Runner
-
-**Purpose:** Execute tools in main thread
+**Purpose:** In-memory tool management loaded from IndexedDB
 
 **Interface:**
 ```javascript
-interface ToolRunner {
-  execute(toolName: string, args: object, context: ToolContext): Promise<ToolResult>;
-  registerTool(name: string, implementation: ToolFunction): void;
-  loadDynamicTool(repo: string, name: string): Promise<void>;
+interface ToolRegistry {
+  // Registry management
+  load(): Promise<void>; // Load all tools from IndexedDB
+  register(tool: Tool): void; // Add to memory map
+  unregister(name: string): void;
+  get(name: string): Tool | undefined;
+  list(): Tool[];
+  has(name: string): boolean;
+  
+  // Persistence
+  save(tool: Tool): Promise<void>; // Save to IndexedDB
+  delete(name: string): Promise<void>;
+}
+```
+
+**Features:**
+- In-memory Map for fast lookups
+- Hydration from IndexedDB on startup
+- Tool validation
+- Event notifications
+
+**Files to Create:**
+```
+components/agent/tool-registry/
+├── src/
+│   ├── index.js
+│   ├── tool-registry.js
+│   └── tool-validator.js
+├── tests/
+│   ├── unit/
+│   │   └── tool-registry.spec.html
+│   └── integration/
+│       └── registry-loading.spec.html
+├── demo/
+│   └── index.html
+└── README.md
+```
+
+**Week 6, Days 1-3:**
+- Day 1: Registry structure and memory map
+- Day 2: IndexedDB hydration
+- Day 3: Tool validation and events
+
+### 3.2 Tool Executor
+
+**Purpose:** Execute tools in sandboxed environment
+
+**Interface:**
+```javascript
+interface ToolExecutor {
+  execute(toolName: string, args: object, context: ExecutionContext): Promise<ToolResult>;
 }
 
-interface ToolContext {
+interface ExecutionContext {
   fileStore: FileStore;
-  eventBus: EventBus;
-  repo: string;
+  postMessage: Function; // For UI events
+  permissions: string[];
 }
 
 interface ToolResult {
   success: boolean;
-  output?: string;
+  output?: any;
   error?: string;
 }
 ```
 
 **Features:**
-- Built-in tool registry
-- Dynamic tool loading from SKILL.md
-- Sandboxed execution (no access to window/document)
+- Function creation via `new Function()`
+- Sandboxed execution scope
+- Permission checking
 - Error handling and timeouts
 
-**Week 6, Days 6-10:**
-- Day 6: Core runner architecture
-- Day 7: Built-in tool registration
-- Day 8: Dynamic tool loading
-- Day 9: Sandboxing and security
-- Day 10: Tests and docs
+**Week 6, Days 4-7:**
+- Day 4: Function creation and execution
+- Day 5: Sandboxing and permissions
+- Day 6: Error handling
+- Day 7: Integration with registry
 
-### 3.3 Skill Md Parser
+### 3.3 Built-in Tools
 
-**Purpose:** Parse SKILL.md tool definitions
+**Tools to Implement:**
 
-**Interface:**
+#### read-tool
 ```javascript
-interface SkillMdParser {
-  parse(content: string): {
-    frontmatter: {
-      name: string;
-      description: string;
-      allowedTools?: string[];
-      version?: string;
-    };
-    instructions: string;
-  };
+// Read file contents
+async function read({ path, startLine, endLine }) {
+  return await fileStore.read(currentRepo, path);
 }
 ```
 
-**Week 7, Days 1-2:**
-- YAML frontmatter parsing
-- Markdown content extraction
-- Validation
+#### write-tool
+```javascript
+// Write file contents
+async function write({ path, content }) {
+  await fileStore.write(currentRepo, path, content);
+}
+```
 
-### 3.4 Dynamic Tool Executor
+#### edit-tool
+```javascript
+// Surgical find-and-replace
+async function edit({ path, oldString, newString }) {
+  const content = await fileStore.read(currentRepo, path);
+  const newContent = content.replace(oldString, newString);
+  await fileStore.write(currentRepo, path, newContent);
+}
+```
 
-**Purpose:** Execute tools defined in SKILL.md
+#### ls-tool
+```javascript
+// List directory contents
+async function ls({ path }) {
+  return await fileStore.list(currentRepo, path);
+}
+```
+
+#### grep-tool
+```javascript
+// Search file contents
+async function grep({ pattern, path, caseSensitive = false }) {
+  // Implementation using fileStore.walk and string matching
+}
+```
+
+#### find-tool
+```javascript
+// Find files by pattern
+async function find({ pattern, path }) {
+  const files = await fileStore.walk(currentRepo, path || '.');
+  return files.filter(file => file.includes(pattern));
+}
+```
+
+#### js-tool
+```javascript
+// Execute JavaScript code
+async function js({ code }) {
+  // Execute in sandbox with limited globals
+}
+```
+
+**Week 6, Days 8-10 & Week 7, Days 1-3:**
+- Days 8-10: Core file tools (read, write, edit)
+- Week 7, Day 1: Search tools (grep, find)
+- Week 7, Day 2: Directory tools (ls)
+- Week 7, Day 3: JavaScript tool
+
+### 3.4 Dynamic Tool Creation
+
+**Purpose:** Allow LLM to create new tools
 
 **Interface:**
 ```javascript
-interface DynamicToolExecutor {
-  execute(skillMd: string, args: object, context: ToolContext): Promise<ToolResult>;
+interface DynamicToolCreator {
+  createFromLLM(spec: ToolSpec): Promise<PendingTool>;
+  validateSpec(spec: ToolSpec): ValidationResult;
+}
+
+interface ToolSpec {
+  name: string;
+  description: string;
+  parameters: JsonSchema;
+  func: string; // JavaScript function body
+  permissions: string[];
 }
 ```
 
 **Features:**
-- Parse SKILL.md instructions
-- Execute as JavaScript
-- Access to allowed tools only
-- Timeout protection
+- JSON schema validation
+- Function syntax checking
+- Permission assignment
+- Pending approval workflow
 
-**Week 7, Days 3-5:**
-- Instruction parsing
-- Execution environment
-- Tool access control
+**Week 7, Days 4-5:**
+- Day 4: Tool spec parsing and validation
+- Day 5: Pending tool creation
 
 ### Phase 3 Deliverables
 
+- [ ] Tool Registry with IndexedDB persistence
+- [ ] Tool Executor with sandboxing
 - [ ] 7 built-in tools implemented
-- [ ] Tool Runner with registry
-- [ ] SKILL.md parser
-- [ ] Dynamic tool executor
+- [ ] Dynamic tool creation system
 - [ ] All tools tested
 - [ ] Security review
 
 ---
 
-## Phase 4: Rust/WASM Agent Core
+## Phase 4: Agent Core
 
 **Status:** NOT STARTED  
 **Duration:** 2 weeks (Weeks 8-9)  
 **Dependencies:** Phase 3  
-**Goal:** Core agent logic in Rust/WASM
+**Goal:** JavaScript Web Worker agent with LLM integration
 
-### 4.1 Project Setup
+### 4.1 Agent Core Structure
 
-**Week 8, Day 1:**
-```bash
-# Initialize Rust project
-cargo init --lib agent-core
-cd agent-core
-
-# Add dependencies to Cargo.toml
-```
-
-**Dependencies:**
-```toml
-[dependencies]
-wasm-bindgen = "0.2"
-wasm-bindgen-futures = "0.4"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-serde-wasm-bindgen = "0.6"
-js-sys = "0.3"
-web-sys = { version = "0.3", features = ["console"] }
-uuid = { version = "1.0", features = ["v4", "js"] }
-chrono = { version = "0.4", features = ["serde"] }
-getrandom = { version = "0.2", features = ["js"] }
-```
-
-### 4.2 Session Tree (Rust)
-
-**Purpose:** Branching conversation history
+**Purpose:** Main agent logic in Web Worker
 
 **Interface:**
-```rust
-#[wasm_bindgen]
-pub struct SessionTree {
-    session_id: String,
-    root: Node,
-    current: String, // node id
-}
-
-#[wasm_bindgen]
-impl SessionTree {
-    #[wasm_bindgen(constructor)]
-    pub fn new() -> Self;
-    
-    pub fn append_message(&mut self, role: String, content: String, tool_calls: Option<JsValue>) -> String;
-    pub fn branch(&mut self, from_node_id: String) -> String;
-    pub fn get_history(&self) -> JsValue; // Returns Vec<Message>
-    pub fn get_tree(&self) -> JsValue; // Returns full tree
-    pub fn set_current(&mut self, node_id: String);
+```javascript
+class AgentCore {
+  constructor(apiClient, toolRegistry, toolExecutor) {
+    this.apiClient = apiClient;
+    this.toolRegistry = toolRegistry;
+    this.toolExecutor = toolExecutor;
+    this.sessionManager = new SessionManager();
+    this.contextBuilder = new ContextBuilder();
+  }
+  
+  async init() {
+    await this.toolRegistry.load();
+    // Hydrate registry
+  }
+  
+  async chat(message) {
+    // Main LLM loop
+  }
+  
+  async executeTool(name, args) {
+    // Tool dispatch
+  }
 }
 ```
 
-**Week 8, Days 2-4:**
-- Node structure
-- Tree operations
-- History reconstruction
+**Features:**
+- Message passing with main thread
+- LLM API integration
+- Tool orchestration
+- Session management
+
+**Files to Create:**
+```
+components/agent/agent-core/
+├── src/
+│   ├── index.js
+│   ├── agent-core.js
+│   ├── llm-client.js
+│   └── tool-dispatcher.js
+├── tests/
+│   ├── unit/
+│   │   └── agent-core.spec.html
+│   └── integration/
+│       └── chat-loop.spec.html
+├── demo/
+│   └── index.html
+└── README.md
+```
+
+**Week 8, Days 1-4:**
+- Day 1: Agent core structure
+- Day 2: Message passing protocol
+- Day 3: LLM client integration
+- Day 4: Tool dispatcher
+
+### 4.2 Session Manager
+
+**Purpose:** Handle conversation trees and branching
+
+**Interface:**
+```javascript
+class SessionManager {
+  constructor(globalStore) {
+    this.globalStore = globalStore;
+    this.sessions = new Map();
+  }
+  
+  async loadSession(sessionId) {
+    // Load from IndexedDB
+  }
+  
+  async saveSession(sessionId) {
+    // Save to IndexedDB
+  }
+  
+  createNode(parentId, role, content, toolCalls) {
+    // Create new conversation node
+  }
+  
+  branch(fromNodeId) {
+    // Create branch
+  }
+  
+  getHistory(nodeId) {
+    // Reconstruct conversation history
+  }
+}
+```
+
+**Features:**
+- Tree-based conversation storage
 - Branching support
+- History reconstruction
+- Persistence to IndexedDB
 
-### 4.3 Agent Core
+**Week 8, Days 5-7:**
+- Day 5: Session tree structure
+- Day 6: Node operations
+- Day 7: Branching and history
 
-**Purpose:** Main LLM loop and orchestration
+### 4.3 Context Builder
+
+**Purpose:** Build context for LLM requests
 
 **Interface:**
-```rust
-#[wasm_bindgen]
-pub struct AgentCore {
-    api_key: String,
-    model: String,
-    session: SessionTree,
-    config: AgentConfig,
-}
-
-#[wasm_bindgen]
-impl AgentCore {
-    #[wasm_bindgen(constructor)]
-    pub fn new(api_key: String, model: String) -> Self;
-    
-    // Main chat loop
-    pub async fn chat(&mut self, message: String) -> JsValue;
-    
-    // Tool management
-    pub fn scan_tools(&self) -> JsValue; // Returns Vec<Tool>
-    pub async fn execute_tool(&self, name: String, args: String) -> JsValue;
-    
-    // Session management
-    pub fn get_session(&self) -> JsValue;
-    pub fn load_session(&mut self, session_json: String);
-    
-    // Events (via callbacks)
-    pub fn on_step(&mut self, callback: js_sys::Function);
-    pub fn on_tool_call(&mut self, callback: js_sys::Function);
-    pub fn on_done(&mut self, callback: js_sys::Function);
+```javascript
+class ContextBuilder {
+  constructor(fileStore) {
+    this.fileStore = fileStore;
+  }
+  
+  async buildContext(message, sessionHistory, repo) {
+    // Combine session history with file context
+  }
+  
+  shouldCompact(tokenCount) {
+    // Check if context needs compaction
+  }
+  
+  compact(history) {
+    // Summarize old messages
+  }
 }
 ```
 
 **Features:**
-- LLM conversation loop
-- Tool discovery and dispatch
-- Session persistence callbacks
-- Step-by-step progress events
-
-**Week 8, Days 5-10:**
-- Day 5: Core structure
-- Day 6: LLM integration
-- Day 7: Tool dispatch
-- Day 8: Event system
-- Day 9: Error handling
-- Day 10: Testing
-
-### 4.4 Tool Dispatcher
-
-**Purpose:** Route tool calls to appropriate handlers
-
-**Interface:**
-```rust
-pub struct ToolDispatcher {
-    tools: HashMap<String, ToolDefinition>,
-}
-
-impl ToolDispatcher {
-    pub fn register_tool(&mut self, tool: ToolDefinition);
-    pub async fn dispatch(&self, name: &str, args: &str) -> Result<ToolResult, ToolError>;
-    pub fn get_available_tools(&self) -> Vec<ToolDefinition>;
-}
-```
-
-**Week 9, Days 1-2:**
-- Tool registry
-- Dispatch logic
-- Result validation
-
-### 4.5 Compaction Engine
-
-**Purpose:** Automatic context window management
-
-**Interface:**
-```rust
-pub struct CompactionEngine {
-    config: CompactionConfig,
-}
-
-impl CompactionEngine {
-    pub fn should_compact(&self, token_count: usize) -> bool;
-    pub fn compact(&self, history: Vec<Message>) -> Vec<Message>;
-}
-```
-
-**Features:**
-- Token counting
+- Token counting and management
+- File content inclusion
 - Automatic summarization
-- Proactive and reactive compaction
+- Context window optimization
 
-**Week 9, Days 3-4:**
-- Token estimation
-- Summarization logic
-- Compaction triggers
+**Week 8, Days 8-10:**
+- Day 8: Context building
+- Day 9: Token management
+- Day 10: Compaction logic
 
-### 4.6 Export Manager
+### 4.4 Web Worker Integration
 
-**Purpose:** Session export to external formats
+**Purpose:** Worker entry point and message handling
 
-**Interface:**
-```rust
-pub struct ExportManager;
-
-impl ExportManager {
-    pub fn to_jsonl(session: &SessionTree) -> String;
-    pub fn to_markdown(session: &SessionTree) -> String;
-}
+**Files:**
+```
+src/agent/
+├── worker.js          # Worker entry point
+├── agent.js           # Agent instantiation
+└── protocol.js        # Message protocol
 ```
 
-**Week 9, Days 5-7:**
-- JSONL format
-- Markdown format
-- Download integration
+**Message Protocol:**
+```javascript
+// Main → Worker
+{ type: 'init', apiKey: string, model: string }
+{ type: 'chat', message: string, sessionId: string }
+{ type: 'approve_tool', toolId: string }
+{ type: 'load_repo', owner: string, repo: string }
 
-### 4.7 JavaScript Bridge
-
-**Purpose:** WASM ↔ JavaScript communication
-
-**Functions to expose:**
-```rust
-// Called from JavaScript
-#[wasm_bindgen(js_name = "scanTools")]
-pub async fn scan_tools() -> JsValue;
-
-#[wasm_bindgen(js_name = "executeTool")]
-pub async fn execute_tool(name: String, args: String) -> JsValue;
-
-#[wasm_bindgen(js_name = "persistSession")]
-pub async fn persist_session(session_json: String);
+// Worker → Main
+{ type: 'ready', toolCount: number }
+{ type: 'step', content: string }
+{ type: 'tool_pending', tool: object }
+{ type: 'preview_component', tagName: string, code: string }
+{ type: 'error', message: string }
 ```
 
-**Week 9, Days 8-10:**
-- Bridge functions
-- Error handling
-- Testing
+**Week 9, Days 1-5:**
+- Day 1: Worker bootstrap
+- Day 2: Message handlers
+- Day 3: Protocol implementation
+- Day 4: Error handling
+- Day 5: Integration testing
 
 ### Phase 4 Deliverables
 
-- [ ] Rust project structure
-- [ ] Session Tree in Rust
-- [ ] Agent Core with LLM loop
-- [ ] Tool Dispatcher
-- [ ] Compaction Engine
-- [ ] Export Manager
-- [ ] JS bridge functions
-- [ ] WASM compilation working
-- [ ] Integration tests
+- [ ] Agent Core JavaScript implementation
+- [ ] Session Manager with branching
+- [ ] Context Builder with compaction
+- [ ] Web Worker integration
+- [ ] Message protocol
+- [ ] All components tested
+- [ ] Integration with tool system
 
 ---
 
@@ -682,9 +726,16 @@ pub async fn persist_session(session_json: String);
 **Dependencies:** Phase 4  
 **Goal:** User interface components
 
+## Phase 5: UI Components
+
+**Status:** NOT STARTED  
+**Duration:** 2 weeks (Weeks 10-11)  
+**Dependencies:** Phase 4  
+**Goal:** Lit HTML Web Components for user interface
+
 ### 5.1 Chat UI
 
-**Purpose:** Main chat interface
+**Purpose:** Main chat interface using Lit HTML
 
 **Features:**
 - Message display (user/assistant)
@@ -693,16 +744,70 @@ pub async fn persist_session(session_json: String);
 - Input with history
 - Command palette (/clear, /export, etc.)
 
+**Implementation:**
+```javascript
+// components/ui/chat-ui/src/chat-ui.js
+import { LitElement, html, css } from 'https://cdn.jsdelivr.net/gh/lit/dist@3/core/lit-core.min.js';
+
+export class ChatUi extends LitElement {
+  static styles = css`
+    :host { display: flex; flex-direction: column; height: 100%; }
+    /* Tailwind utilities */
+  `;
+
+  static properties = {
+    messages: { type: Array },
+    inputText: { type: String },
+    isLoading: { type: Boolean }
+  };
+
+  render() {
+    return html`
+      <div class="flex flex-col h-full">
+        <div class="flex-1 overflow-y-auto p-4">
+          ${this.messages.map(msg => this.renderMessage(msg))}
+        </div>
+        <div class="flex p-4 border-t">
+          <textarea
+            class="flex-1 p-3 border rounded-lg"
+            .value="${this.inputText}"
+            @input="${this.handleInput}"
+          ></textarea>
+        </div>
+      </div>
+    `;
+  }
+}
+customElements.define('chat-ui', ChatUi);
+```
+
+**Files to Create:**
+```
+components/ui/chat-ui/
+├── src/
+│   ├── index.js
+│   ├── chat-ui.js
+│   └── message-renderer.js
+├── tests/
+│   ├── unit/
+│   │   └── chat-ui.spec.html
+│   └── integration/
+│       └── chat-flow.spec.html
+├── demo/
+│   └── index.html
+└── README.md
+```
+
 **Week 10, Days 1-5:**
-- Day 1: Component structure
+- Day 1: Lit HTML setup and component structure
 - Day 2: Message rendering
 - Day 3: Input handling
-- Day 4: Tool display
-- Day 5: Commands
+- Day 4: Tool call display
+- Day 5: Commands and features
 
 ### 5.2 Session Tree UI
 
-**Purpose:** Visual session branching
+**Purpose:** Visual session branching with Lit HTML
 
 **Features:**
 - Tree visualization
@@ -711,25 +816,89 @@ pub async fn persist_session(session_json: String);
 - History view
 
 **Week 10, Days 6-10:**
-- Day 6: Tree layout
+- Day 6: Tree layout component
 - Day 7: Branching UI
 - Day 8: Navigation
-- Day 9: Persistence
-- Day 10: Polish
+- Day 9: Persistence integration
+- Day 10: Polish and styling
 
 ### 5.3 Tool Approval UI
 
 **Purpose:** Review and approve dynamic tools
 
 **Features:**
-- SKILL.md display
-- Syntax highlighting
+- Tool definition display
+- JSON schema visualization
 - Approve/Reject buttons
-- Pending queue
+- Pending queue management
 
 **Week 11, Days 1-3:**
-- Day 1: Display component
-- Day 2: Approval flow
+- Day 1: Approval component
+- Day 2: Tool display and validation
+- Day 3: Queue management
+
+### 5.4 Preview Engine
+
+**Purpose:** Dynamically render UI components from agent
+
+**Features:**
+- Web Component registration
+- Shadow DOM isolation
+- Style encapsulation
+- Event handling
+
+**Implementation:**
+```javascript
+class PreviewEngine {
+  async renderComponent(tagName, script, styles) {
+    // Create script element
+    const scriptEl = document.createElement('script');
+    scriptEl.textContent = script;
+    document.head.appendChild(scriptEl);
+    
+    // Create style element
+    if (styles) {
+      const styleEl = document.createElement('style');
+      styleEl.textContent = styles;
+      document.head.appendChild(styleEl);
+    }
+    
+    // Component is now available for use
+    return tagName;
+  }
+}
+```
+
+**Week 11, Days 4-7:**
+- Day 4: Component registration system
+- Day 5: Shadow DOM isolation
+- Day 6: Style handling
+- Day 7: Security and sandboxing
+
+### 5.5 GitHub Loader UI
+
+**Purpose:** Repository loading interface
+
+**Features:**
+- Owner/repo input
+- Progress indicator
+- File tree preview
+- Error display
+
+**Week 11, Days 8-10:**
+- Day 8: Loader component
+- Day 9: Progress and feedback
+- Day 10: Integration
+
+### Phase 5 Deliverables
+
+- [ ] Chat UI (Lit HTML)
+- [ ] Session Tree UI
+- [ ] Tool Approval UI
+- [ ] Preview Engine
+- [ ] GitHub Loader UI
+- [ ] All components tested
+- [ ] Responsive design with Tailwind
 - Day 3: Queue management
 
 ### 5.4 GitHub Loader UI
@@ -921,9 +1090,10 @@ The project is successful when:
 - **Duration:** 12 weeks
 - **Skills:**
   - JavaScript (ES2020+)
-  - Rust (basic)
-  - WASM concepts
-  - Web APIs (OPFS, IndexedDB, Workers)
+  - Web Components (Lit HTML)
+  - Web Workers
+  - IndexedDB, OPFS APIs
+  - Web Platform APIs
 
 ### Tools
 
@@ -945,10 +1115,10 @@ The project is successful when:
 | Phase | Duration | Start | End | Deliverables |
 |-------|----------|-------|-----|--------------|
 | 1: Core | 3 weeks | Week 1 | Week 3 | 5 core components ✓ |
-| 2: Storage | 2 weeks | Week 4 | Week 5 | 4 storage components |
-| 3: Tools | 2 weeks | Week 6 | Week 7 | Tool system |
-| 4: WASM | 2 weeks | Week 8 | Week 9 | Rust agent core |
-| 5: UI | 2 weeks | Week 10 | Week 11 | UI components |
+| 2: Storage | 2 weeks | Week 4 | Week 5 | File Store, Global Store |
+| 3: Tools | 2 weeks | Week 6 | Week 7 | Tool Registry, Executor, Built-ins |
+| 4: Agent | 2 weeks | Week 8 | Week 9 | JS Web Worker, Session Mgmt |
+| 5: UI | 2 weeks | Week 10 | Week 11 | Lit HTML Components |
 | 6: Delivery | 1 week | Week 12 | Week 12 | Integration & deploy |
 | **Total** | **12 weeks** | | | |
 
@@ -977,9 +1147,9 @@ Core (Phase 1) ← Storage (Phase 2) ← Tools (Phase 3) ← WASM (Phase 4) ← 
 
 | Decision | Rationale |
 |----------|-----------|
-| Rust/WASM | Performance, type safety |
-| Vanilla JS | No build step, fast iteration |
-| Lit HTML | Efficient rendering, small footprint |
+| JavaScript Web Worker | Performance, non-blocking UI, security isolation |
+| Registry-Based Tools | Speed, portability, "install once, use everywhere" |
+| Lit HTML | Efficient rendering, small footprint, Web Components |
 | Tailwind CDN | No build, rapid styling |
 | OPFS | Fast, private file storage |
 | IndexedDB | Structured data, queries |
@@ -989,41 +1159,52 @@ Core (Phase 1) ← Storage (Phase 2) ← Tools (Phase 3) ← WASM (Phase 4) ← 
 
 ```
 aardvark/
-├── Cargo.toml              # Rust workspace
-├── src/                    # Rust source
-│   ├── lib.rs
-│   ├── agent.rs
-│   ├── session.rs
-│   ├── tools.rs
-│   └── compaction.rs
+├── components/             # Reusable modules
+│   ├── core/               # Phase 1 (COMPLETE)
+│   │   ├── event-bus/
+│   │   ├── message-bridge/
+│   │   ├── api-client/
+│   │   ├── indexeddb-provider/
+│   │   └── opfs-provider/
+│   ├── storage/            # Phase 2
+│   │   ├── file-store/
+│   │   └── global-store/
+│   ├── agent/              # Phases 3-4
+│   │   ├── tool-registry/
+│   │   ├── tool-executor/
+│   │   ├── agent-core/
+│   │   ├── session-manager/
+│   │   └── context-builder/
+│   └── ui/                 # Phase 5
+│       ├── chat-ui/
+│       ├── session-tree-ui/
+│       ├── tool-approval-ui/
+│       └── preview-engine/
 │
-├── components/
-│   ├── core/              # Phase 1 (COMPLETE)
-│   ├── storage/           # Phase 2
-│   ├── tools/             # Phase 3
-│   └── ui/                # Phase 5
+├── src/                    # Application Entry
+│   ├── main.js             # UI Entry point
+│   └── agent/
+│       ├── worker.js       # Agent Worker
+│       └── protocol.js     # Message protocol
 │
-├── www/                   # Web assets
+├── www/                    # Static assets
 │   ├── index.html
 │   ├── index.js
 │   ├── app/
 │   └── tests/
 │
-├── pkg/                   # Generated WASM
-│
-├── plans/                 # Documentation
+├── plans/                  # Documentation
 │   ├── master-execution-plan.md
-│   ├── 01-phase-1-extract-core.md
 │   └── ...
 │
-└── tests/                 # Test suites
+└── tests/                  # Test suites
     ├── integration/
     └── e2e/
 ```
 
 ---
 
-**Document Status:** Draft  
-**Last Updated:** 2026-02-07  
+**Document Status:** Updated  
+**Last Updated:** 2026-02-08  
 **Author:** Development Team  
 **Reviewers:** TBD
