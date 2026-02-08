@@ -717,6 +717,95 @@ src/agent/
 - [ ] All components tested
 - [ ] Integration with tool system
 
+### Phase 4 Component Integrations
+
+**Critical Integration Points** (must be documented and tested):
+
+#### Phase 1 Component Integrations
+
+**API Client Integration:**
+- Agent Core uses API Client for LLM communication
+- Streaming response handling
+- Token usage tracking and limits
+- Error handling for API failures
+- Model selection and configuration
+
+**Message Bridge Integration:**
+- Web Worker ↔ Main thread communication
+- Message protocol implementation
+- Event forwarding between threads
+- Tool approval workflow
+- UI component preview messaging
+
+**Event Bus Integration:**
+- System-wide event notifications
+- Tool execution events
+- Session state changes
+- Repository loading events
+- Error and status broadcasting
+
+#### Phase 2 Component Integrations
+
+**File Store Integration:**
+- Repository file access for context building
+- File content inclusion in LLM prompts
+- GitHub repository loading
+- File operation permissions in tool execution
+- Context compaction based on file relevance
+
+**Global Store Integration:**
+- Tool Registry persistence (load/save tools)
+- Session tree storage and retrieval
+- Pending tool approval queue
+- User settings and preferences
+- IndexedDB transaction management
+
+**Session Store Integration:**
+- Conversation tree persistence
+- Branch management and history
+- Session metadata storage
+- Cross-session context sharing
+
+#### Phase 3 Component Integrations
+
+**Tool Registry Integration:**
+- In-memory tool management
+- Tool validation and registration
+- Event-driven tool updates
+- Registry hydration on startup
+- Tool lookup and execution dispatch
+
+**Tool Executor Integration:** ⚠️ **MISSING COMPONENT**
+- Sandboxed tool execution environment
+- Permission enforcement
+- Execution timeout handling
+- Error isolation and reporting
+- Context passing (file access, UI events)
+
+### Critical Gaps Identified
+
+**Missing Tool Executor Component:**
+- **Status:** Not implemented (was planned for Phase 3 but deferred)
+- **Impact:** Agent cannot safely execute tools
+- **Required For:** Tool execution, security, sandboxing
+- **Recommendation:** Implement as Phase 4.1 (high priority)
+
+**Integration Testing Requirements:**
+- Cross-component communication tests
+- End-to-end tool execution workflows
+- Web Worker message passing
+- IndexedDB persistence verification
+- File system access in sandboxed environment
+
+#### Phase 5 Component Dependencies (Future)
+
+**UI Component Integration Points:**
+- Chat UI for message display and input
+- Tool Approval UI for pending tool workflows
+- Session Tree UI for conversation branching
+- File Browser UI for repository navigation
+- Export UI for conversation export
+
 ---
 
 ## Phase 5: UI Components
