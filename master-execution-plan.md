@@ -416,6 +416,8 @@ interface ToolResult {
 
 ### 3.3 Built-in Tools
 
+**Status:** POSTPONED UNTIL AFTER PHASE 6
+
 **Tools to Implement:**
 
 #### read-tool
