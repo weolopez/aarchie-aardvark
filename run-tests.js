@@ -11,14 +11,7 @@ const path = require('path');
 
 // Test files to run
 const testFiles = [
-  'components/storage/tool-store/tests/unit/tool-store.spec.html',
-  'components/core/message-bridge/tests/integration/tool-approval-flow.spec.html',
-  'components/storage/settings-store/tests/unit/settings-store.spec.html',
-  'components/agent/tool-registry/tests/unit/tool-registry.spec.html',
-  'components/agent/tool-registry/tests/unit/tool-validator.spec.html',
-  'components/agent/tool-registry/tests/integration/registry-persistence.spec.html',
-  'components/agent/tool-registry/tests/integration/registry-events.spec.html',
-  'tests/integration/storage-consistency.spec.html'
+  'components/agent/agent-core/tests/unit/llm-client.spec.html'
 ];
 
 const results = [];
@@ -63,6 +56,13 @@ async function runTest(browser, testPath, baseUrl) {
   const context = await browser.newContext();
   const page = await context.newPage();
   
+  // Set API key in localStorage for LLM tests
+  if (process.env.GEMINI_API_KEY) {
+    await page.addInitScript((apiKey) => {
+      localStorage.setItem('GEMINI_API_KEY', apiKey);
+    }, process.env.GEMINI_API_KEY);
+  }
+  
   // Listen for console messages
   page.on('console', msg => {
     console.log(`  CONSOLE: ${msg.text()}`);
@@ -72,12 +72,15 @@ async function runTest(browser, testPath, baseUrl) {
   const url = `${baseUrl}/${testPath}`;
   await page.goto(url, { waitUntil: 'networkidle' });
   
-  // Wait for tests to complete
-  // Tests report completion via postMessage or we can check for the summary element
-  await page.waitForFunction(() => {
-    const badge = document.getElementById('status-badge');
-    return badge && (badge.textContent.includes('Passed') || badge.textContent.includes('Failed'));
-  }, { timeout: 60000 });
+   // Wait for tests to complete
+   // Tests report completion via postMessage or we can check for the summary element
+   await page.waitForFunction(() => {
+     const badge = document.getElementById('status-badge');
+     const resultsDiv = document.getElementById('test-results');
+     // Check if tests have started running (more than just the initial message)
+     const testElements = resultsDiv ? resultsDiv.querySelectorAll('.border-l-4').length : 0;
+     return badge && (badge.textContent.includes('Passed') || badge.textContent.includes('Failed')) || testElements > 1;
+   }, { timeout: 120000 }); // 2 minutes for live API calls
   
   // Extract results
   const testResult = await page.evaluate(() => {

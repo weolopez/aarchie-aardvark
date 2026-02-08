@@ -1,0 +1,44 @@
+{
+  "name": "@aardvark/agent-core",
+  "version": "1.0.0",
+  "description": "AI-powered coding assistant core with tool execution and conversation management",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "test": "node run-tests.js",
+    "test:unit": "node run-tests.js --unit",
+    "test:integration": "node run-tests.js --integration",
+    "demo": "python -m http.server 8080",
+    "build": "echo 'No build step required for ES modules'",
+    "lint": "echo 'Linting not configured yet'"
+  },
+  "keywords": [
+    "ai",
+    "coding-assistant",
+    "llm",
+    "tool-execution",
+    "web-worker",
+    "conversation-management"
+  ],
+  "author": "Aardvark Team",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {},
+  "peerDependencies": {
+    "@aardvark/tool-executor": "^1.0.0",
+    "@aardvark/tool-registry": "^1.0.0",
+    "@aardvark/session-manager": "^1.0.0",
+    "@aardvark/context-builder": "^1.0.0",
+    "@aardvark/api-client": "^1.0.0",
+    "@aardvark/message-bridge": "^1.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/weolopez/aarchie-aardvark.git",
+    "directory": "components/agent/agent-core"
+  },
+  "bugs": {
+    "url": "https://github.com/weolopez/aarchie-aardvark/issues"
+  },
+  "homepage": "https://github.com/weolopez/aarchie-aardvark#readme"
+}

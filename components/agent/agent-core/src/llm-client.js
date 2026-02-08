@@ -1,5 +1,5 @@
 /**
- * LLM Client - OpenAI API Integration
+ * LLM Client - Gemini API Integration
  *
  * Handles communication with LLM APIs, including chat completion,
  * tool calling, and streaming support.
@@ -8,9 +8,9 @@
 export class LLMClient {
   constructor(config) {
     this.config = config;
-    this.apiBaseUrl = config.apiBaseUrl || 'https://api.openai.com/v1';
-    this.apiKey = config.apiKey;
-    this.model = config.model || 'gpt-4';
+    this.apiBaseUrl = config.apiBaseUrl || 'https://generativelanguage.googleapis.com/v1';
+    this.model = config.model || 'gemini-pro';
+    this.apiKey = config.apiKey || localStorage.getItem('GEMINI_API_KEY');
     this.defaultMaxTokens = config.maxTokens || 4096;
     this.defaultTemperature = config.temperature || 0.7;
   }
@@ -32,26 +32,26 @@ export class LLMClient {
       maxTokens = this.defaultMaxTokens
     } = options;
 
+    const url = `${this.apiBaseUrl}/models/${this.model}:generateContent?key=${this.apiKey}`;
+
     const requestBody = {
-      model: this.model,
-      messages: this._formatMessages(messages),
-      temperature,
-      max_tokens: maxTokens,
-      stream: false
+      contents: this._formatMessagesForGemini(messages),
+      generationConfig: {
+        temperature,
+        maxOutputTokens: maxTokens
+      }
     };
 
     // Add tools if provided
     if (tools.length > 0) {
-      requestBody.tools = tools;
-      requestBody.tool_choice = 'auto';
+      requestBody.tools = this._formatToolsForGemini(tools);
     }
 
     try {
-      const response = await fetch(`${this.apiBaseUrl}/chat/completions`, {
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify(requestBody)
       });
@@ -62,7 +62,7 @@ export class LLMClient {
       }
 
       const data = await response.json();
-      return this._parseResponse(data);
+      return this._parseGeminiResponse(data);
 
     } catch (error) {
       console.error('LLM API error:', error);
@@ -121,70 +121,107 @@ export class LLMClient {
   }
 
   /**
-   * Format messages for API consumption
+   * Format messages for Gemini API
    * @private
    * @param {Message[]} messages - Raw messages
-   * @returns {Message[]} Formatted messages
+   * @returns {object[]} Formatted contents
    */
-  _formatMessages(messages) {
-    return messages.map(message => {
-      const formatted = {
-        role: message.role,
-        content: message.content
-      };
+  _formatMessagesForGemini(messages) {
+    // Gemini expects a single content with conversation history in parts
+    const parts = [];
 
-      // Handle tool calls
-      if (message.toolCalls) {
-        formatted.tool_calls = message.toolCalls.map(call => ({
-          id: call.id,
-          type: call.type || 'function',
-          function: {
-            name: call.function.name,
-            arguments: call.function.arguments
-          }
-        }));
+    for (const message of messages) {
+      let text = '';
+
+      // Handle system messages by including them in the conversation
+      if (message.role === 'system') {
+        text = `System: ${message.content}`;
+      } else if (message.role === 'user') {
+        text = message.content;
+      } else if (message.role === 'assistant') {
+        text = message.content;
+      } else if (message.role === 'tool') {
+        text = `Tool result: ${message.content}`;
       }
 
-      // Handle tool results
-      if (message.role === 'tool') {
-        formatted.tool_call_id = message.toolCallId;
+      if (text) {
+        parts.push({ text });
       }
+    }
 
-      return formatted;
-    });
+    return [{
+      parts: parts
+    }];
   }
 
   /**
-   * Parse API response into our format
+   * Format tools for Gemini API
    * @private
-   * @param {object} data - Raw API response
+   * @param {ToolDefinition[]} tools - Raw tools
+   * @returns {object[]} Formatted tools
+   */
+  _formatToolsForGemini(tools) {
+    return [{
+      functionDeclarations: tools.map(tool => ({
+        name: tool.function.name,
+        description: tool.function.description,
+        parameters: tool.function.parameters
+      }))
+    }];
+  }
+
+  /**
+   * Parse Gemini API response into our format
+   * @private
+   * @param {object} data - Raw Gemini response
    * @returns {ChatResponse} Parsed response
    */
-  _parseResponse(data) {
-    const choice = data.choices[0];
-    if (!choice) {
-      throw new Error('No response choices received from API');
+  _parseGeminiResponse(data) {
+    const candidate = data.candidates[0];
+    if (!candidate) {
+      throw new Error('No response candidates received from Gemini API');
     }
 
     const response = {
-      content: choice.message.content || '',
+      content: '',
       usage: {
-        promptTokens: data.usage?.prompt_tokens || 0,
-        completionTokens: data.usage?.completion_tokens || 0,
-        totalTokens: data.usage?.total_tokens || 0
+        promptTokens: data.usageMetadata?.promptTokenCount || 0,
+        completionTokens: data.usageMetadata?.candidatesTokenCount || 0,
+        totalTokens: data.usageMetadata?.totalTokenCount || 0
       }
     };
 
-    // Handle tool calls
-    if (choice.message.tool_calls) {
-      response.toolCalls = choice.message.tool_calls.map(call => ({
-        id: call.id,
-        type: call.type,
-        function: {
-          name: call.function.name,
-          arguments: call.function.arguments
-        }
-      }));
+    // Extract content
+    if (candidate.content && candidate.content.parts) {
+      response.content = candidate.content.parts
+        .filter(part => part.text)
+        .map(part => {
+          // Remove thoughtSignature if present
+          const text = part.text;
+          if (text.includes('thoughtSignature')) {
+            return text.split('thoughtSignature')[0].trim();
+          }
+          return text;
+        })
+        .join('');
+    }
+
+    // Handle function calls
+    if (candidate.content && candidate.content.parts) {
+      const functionCalls = candidate.content.parts
+        .filter(part => part.functionCall)
+        .map(part => part.functionCall);
+
+      if (functionCalls.length > 0) {
+        response.toolCalls = functionCalls.map((call, index) => ({
+          id: `call-${Date.now()}-${index}`,
+          type: 'function',
+          function: {
+            name: call.name,
+            arguments: JSON.stringify(call.args || {})
+          }
+        }));
+      }
     }
 
     return response;
@@ -296,15 +333,12 @@ export class LLMClient {
   }
 
   /**
-   * Get available models (mock implementation)
+   * Get available models (Gemini models)
    * @returns {string[]} Available model names
    */
   getAvailableModels() {
     return [
-      'gpt-4',
-      'gpt-4-turbo',
-      'gpt-3.5-turbo',
-      'gpt-3.5-turbo-16k'
+      'gemini-pro'
     ];
   }
 }

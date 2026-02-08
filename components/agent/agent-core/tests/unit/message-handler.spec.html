@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Message Handler - Unit Tests</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <div class="max-w-4xl mx-auto p-6">
+    <header class="mb-8">
+      <h1 class="text-3xl font-bold text-gray-800 mb-2">Message Handler - Unit Tests</h1>
+      <p class="text-gray-600">Testing Web Worker communication protocol and message routing</p>
+    </header>
+
+    <div id="test-results" class="space-y-4">
+      <div class="bg-blue-50 border-l-4 border-blue-400 p-4">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 000 16zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+            </svg>
+          </div>
+          <div class="ml-3">
+            <p class="text-sm text-blue-700">
+              Running Message Handler unit tests...
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="test-status" class="mt-8 hidden">
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">Test Results</h2>
+        <div class="flex items-center space-x-4 mb-4">
+          <span id="status-badge" class="px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">Running...</span>
+          <span id="total-count" class="text-gray-600">0</span> total,
+          <span id="pass-count" class="text-green-600">0</span> passed,
+          <span id="fail-count" class="text-red-600">0</span> failed
+        </div>
+        <div id="status-content"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { MessageHandler } from '../../../src/message-handler.js';
+
+    // Test utilities
+    const tests = [];
+    let passed = 0;
+    let failed = 0;
+
+    function test(name, fn) {
+      tests.push({ name, fn });
+    }
+
+    function assert(condition, message) {
+      if (!condition) {
+        throw new Error(message);
+      }
+    }
+
+    function assertEqual(actual, expected, message) {
+      if (actual !== expected) {
+        throw new Error(`${message}: expected ${expected}, got ${actual}`);
+      }
+    }
+
+    // Mock Web Worker
+    class MockWorker {
+      constructor() {
+        this.onmessage = null;
+        this.postMessage = (message) => {
+          // Simulate worker response
+          setTimeout(() => {
+            if (this.onmessage) {
+              this.onmessage({
+                data: {
+                  id: message.id,
+                  type: 'response',
+                  result: { success: true, output: 'Mock response' }
+                }
+              });
+            }
+          }, 10);
+        };
+      }
+    }
+
+    // Test definitions
+    test('MessageHandler constructor', () => {
+      const handler = new MessageHandler();
+
+      assert(handler instanceof MessageHandler, 'Should create MessageHandler instance');
+      assert(handler.pendingRequests instanceof Map, 'Should initialize pending requests map');
+      assert(typeof handler.nextId === 'number', 'Should initialize request ID counter');
+    });
+
+    test('MessageHandler sendMessage - basic', async () => {
+      const handler = new MessageHandler();
+      const mockWorker = new MockWorker();
+      handler.worker = mockWorker;
+
+      const response = await handler.sendMessage('test-type', { data: 'test' });
+
+      assert(response.success, 'Should receive successful response');
+      assertEqual(response.output, 'Mock response', 'Should return mock response');
+    });
+
+    test('MessageHandler sendMessage - timeout', async () => {
+      const handler = new MessageHandler();
+      const mockWorker = new MockWorker();
+      handler.worker = mockWorker;
+
+      // Override postMessage to never respond
+      mockWorker.postMessage = () => {}; // No response
+
+      try {
+        await handler.sendMessage('test-type', {}, 50); // Short timeout
+        throw new Error('Should have timed out');
+      } catch (error) {
+        assert(error.message.includes('timeout'), 'Should timeout after specified time');
+      }
+    });
+
+    test('MessageHandler sendMessage - error response', async () => {
+      const handler = new MessageHandler();
+      const mockWorker = new MockWorker();
+
+      // Override to send error response
+      mockWorker.postMessage = (message) => {
+        setTimeout(() => {
+          if (mockWorker.onmessage) {
+            mockWorker.onmessage({
+              data: {
+                id: message.id,
+                type: 'error',
+                error: 'Mock error occurred'
+              }
+            });
+          }
+        }, 10);
+      };
+
+      handler.worker = mockWorker;
+
+      try {
+        await handler.sendMessage('test-type', {});
+        throw new Error('Should have thrown error');
+      } catch (error) {
+        assert(error.message.includes('Mock error'), 'Should propagate worker error');
+      }
+    });
+
+    test('MessageHandler handleMessage - response', () => {
+      const handler = new MessageHandler();
+      let resolved = false;
+      let result = null;
+
+      // Create a pending request
+      const requestId = handler.nextId++;
+      handler.pendingRequests.set(requestId, {
+        resolve: (data) => { resolved = true; result = data; },
+        reject: () => {},
+        timeout: setTimeout(() => {}, 1000)
+      });
+
+      // Simulate receiving response
+      handler.handleMessage({
+        data: {
+          id: requestId,
+          type: 'response',
+          result: { success: true, data: 'test' }
+        }
+      });
+
+      assert(resolved, 'Should resolve pending request');
+      assertEqual(result.success, true, 'Should pass result data');
+      assertEqual(result.data, 'test', 'Should include response data');
+    });
+
+    test('MessageHandler handleMessage - error', () => {
+      const handler = new MessageHandler();
+      let rejected = false;
+      let error = null;
+
+      // Create a pending request
+      const requestId = handler.nextId++;
+      handler.pendingRequests.set(requestId, {
+        resolve: () => {},
+        reject: (err) => { rejected = true; error = err; },
+        timeout: setTimeout(() => {}, 1000)
+      });
+
+      // Simulate receiving error
+      handler.handleMessage({
+        data: {
+          id: requestId,
+          type: 'error',
+          error: 'Test error message'
+        }
+      });
+
+      assert(rejected, 'Should reject pending request');
+      assertEqual(error.message, 'Test error message', 'Should pass error message');
+    });
+
+    test('MessageHandler handleMessage - unknown message type', () => {
+      const handler = new MessageHandler();
+
+      // Should not throw for unknown message types
+      handler.handleMessage({
+        data: {
+          id: 123,
+          type: 'unknown-type',
+          data: 'test'
+        }
+      });
+
+      // Should still work normally
+      assert(true, 'Should handle unknown message types gracefully');
+    });
+
+    test('MessageHandler handleMessage - chat message', () => {
+      const handler = new MessageHandler();
+      let chatReceived = false;
+      let chatData = null;
+
+      handler.onChatMessage = (data) => {
+        chatReceived = true;
+        chatData = data;
+      };
+
+      handler.handleMessage({
+        data: {
+          type: 'chat',
+          message: 'Hello from worker',
+          timestamp: Date.now()
+        }
+      });
+
+      assert(chatReceived, 'Should call chat message handler');
+      assertEqual(chatData.message, 'Hello from worker', 'Should pass chat data');
+    });
+
+    test('MessageHandler handleMessage - tool execution message', () => {
+      const handler = new MessageHandler();
+      let toolReceived = false;
+      let toolData = null;
+
+      handler.onToolExecution = (data) => {
+        toolReceived = true;
+        toolData = data;
+      };
+
+      handler.handleMessage({
+        data: {
+          type: 'tool-execution',
+          toolName: 'read_file',
+          args: { path: '/test.txt' },
+          result: { success: true }
+        }
+      });
+
+      assert(toolReceived, 'Should call tool execution handler');
+      assertEqual(toolData.toolName, 'read_file', 'Should pass tool data');
+    });
+
+    test('MessageHandler handleMessage - status update', () => {
+      const handler = new MessageHandler();
+      let statusReceived = false;
+      let statusData = null;
+
+      handler.onStatusUpdate = (data) => {
+        statusReceived = true;
+        statusData = data;
+      };
+
+      handler.handleMessage({
+        data: {
+          type: 'status',
+          status: 'processing',
+          progress: 50
+        }
+      });
+
+      assert(statusReceived, 'Should call status update handler');
+      assertEqual(statusData.status, 'processing', 'Should pass status data');
+    });
+
+    test('MessageHandler registerHandler', () => {
+      const handler = new MessageHandler();
+      let called = false;
+      let receivedData = null;
+
+      handler.registerHandler('custom-type', (data) => {
+        called = true;
+        receivedData = data;
+      });
+
+      handler.handleMessage({
+        data: {
+          type: 'custom-type',
+          value: 'test data'
+        }
+      });
+
+      assert(called, 'Should call registered handler');
+      assertEqual(receivedData.value, 'test data', 'Should pass data to handler');
+    });
+
+    test('MessageHandler unregisterHandler', () => {
+      const handler = new MessageHandler();
+      let called = false;
+
+      const handlerFn = () => { called = true; };
+      handler.registerHandler('test-type', handlerFn);
+      handler.unregisterHandler('test-type');
+
+      handler.handleMessage({
+        data: {
+          type: 'test-type',
+          data: 'test'
+        }
+      });
+
+      assert(!called, 'Should not call unregistered handler');
+    });
+
+    test('MessageHandler sendMessage - unique IDs', async () => {
+      const handler = new MessageHandler();
+      const mockWorker = new MockWorker();
+      let sentMessages = [];
+
+      mockWorker.postMessage = (message) => {
+        sentMessages.push(message);
+        // Don't respond to avoid hanging
+      };
+
+      handler.worker = mockWorker;
+
+      // Send multiple messages quickly
+      const promise1 = handler.sendMessage('type1', {});
+      const promise2 = handler.sendMessage('type2', {});
+      const promise3 = handler.sendMessage('type3', {});
+
+      // Wait a bit then cancel to avoid timeout
+      setTimeout(() => {
+        handler.pendingRequests.clear();
+      }, 100);
+
+      // Check that IDs are unique
+      const ids = sentMessages.map(m => m.id);
+      const uniqueIds = new Set(ids);
+
+      assertEqual(ids.length, uniqueIds.size, 'Should generate unique message IDs');
+    });
+
+    test('MessageHandler cleanup', () => {
+      const handler = new MessageHandler();
+
+      // Add some pending requests
+      handler.pendingRequests.set(1, {
+        resolve: () => {},
+        reject: () => {},
+        timeout: setTimeout(() => {}, 1000)
+      });
+
+      handler.pendingRequests.set(2, {
+        resolve: () => {},
+        reject: () => {},
+        timeout: setTimeout(() => {}, 1000)
+      });
+
+      assertEqual(handler.pendingRequests.size, 2, 'Should have pending requests');
+
+      handler.cleanup();
+
+      assertEqual(handler.pendingRequests.size, 0, 'Should clear all pending requests after cleanup');
+    });
+
+    // Run tests
+    async function runTests() {
+      const resultsDiv = document.getElementById('test-results');
+
+      for (const test of tests) {
+        try {
+          await test.fn();
+          passed++;
+          resultsDiv.innerHTML += `
+            <div class="bg-green-50 border-l-4 border-green-400 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+              </svg>
+                </div>
+                <div class="ml-3">
+                  <p class="text-sm text-green-700">✓ ${test.name}</p>
+                </div>
+              </div>
+            </div>
+          `;
+        } catch (error) {
+          failed++;
+          resultsDiv.innerHTML += `
+            <div class="bg-red-50 border-l-4 border-red-400 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+              </svg>
+                </div>
+                <div class="ml-3">
+                  <p class="text-sm text-red-700">✗ ${test.name}</p>
+                  <p class="text-sm text-red-600 mt-1">${error.message}</p>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      // Show final results
+      const statusDiv = document.getElementById('test-status');
+      const statusContent = document.getElementById('status-content');
+      const statusBadge = document.getElementById('status-badge');
+      const totalCount = document.getElementById('total-count');
+      const passCount = document.getElementById('pass-count');
+      const failCount = document.getElementById('fail-count');
+
+      statusDiv.classList.remove('hidden');
+      totalCount.textContent = passed + failed;
+      passCount.textContent = passed;
+      failCount.textContent = failed;
+      statusBadge.textContent = failed === 0 ? 'All Tests Passed' : 'Some Tests Failed';
+      statusBadge.className = failed === 0 ? 
+        'px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800' : 
+        'px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800';
+
+      statusContent.innerHTML = `
+        <div class="grid grid-cols-3 gap-4 mb-4">
+          <div class="text-center">
+            <div class="text-2xl font-bold text-green-600">${passed}</div>
+            <div class="text-sm text-gray-600">Passed</div>
+          </div>
+          <div class="text-center">
+            <div class="text-2xl font-bold text-red-600">${failed}</div>
+            <div class="text-sm text-gray-600">Failed</div>
+          </div>
+          <div class="text-center">
+            <div class="text-2xl font-bold text-blue-600">${passed + failed}</div>
+            <div class="text-sm text-gray-600">Total</div>
+          </div>
+        </div>
+        ${failed === 0 ?
+          '<div class="bg-green-50 border-l-4 border-green-400 p-4"><p class="text-green-700">All tests passed! ✅</p></div>' :
+          '<div class="bg-red-50 border-l-4 border-red-400 p-4"><p class="text-red-700">Some tests failed. Please review the errors above.</p></div>'
+        }
+      `;
+    }
+
+    // Run tests when page loads
+    runTests().catch(error => {
+      console.error('Test runner failed:', error);
+      document.getElementById('test-results').innerHTML += `
+        <div class="bg-red-50 border-l-4 border-red-400 p-4">
+          <div class="bg-red-50 border-l-4 border-red-400 p-4">
+            <p class="text-red-700">Test runner failed: ${error.message}</p>
+          </div>
+        </div>
+      `;
+    });
+  </script>
+</body>
+</html>

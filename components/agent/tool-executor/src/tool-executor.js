@@ -21,9 +21,10 @@ export class ToolExecutor {
    * @param {string} toolName - Name of the tool to execute
    * @param {object} args - Arguments to pass to the tool function
    * @param {ExecutionContext} context - Execution context with permissions and services
+   * @param {ToolDefinition} tool - Tool definition (optional, for when called from ToolDispatcher)
    * @returns {Promise<ToolResult>} Execution result
    */
-  async execute(toolName, args, context) {
+  async execute(toolName, args, context, tool = null) {
     const startTime = Date.now();
 
     try {
@@ -36,22 +37,22 @@ export class ToolExecutor {
         throw new Error('Execution context with permissions required');
       }
 
-      // Get tool from registry (will be injected via context or direct access)
-      const tool = this._getTool(toolName);
-      if (!tool) {
+      // Get tool from parameter or registry
+      const toolDef = tool || this._getTool(toolName);
+      if (!toolDef) {
         throw new Error(`Tool '${toolName}' not found`);
       }
 
       // Check permissions
-      if (!checkPermissions(tool.permissions, context.permissions)) {
-        throw new Error(`Tool '${toolName}' requires permissions: ${tool.permissions.join(', ')}`);
+      if (!checkPermissions(toolDef.permissions, context.permissions)) {
+        throw new Error(`Tool '${toolName}' requires permissions: ${toolDef.permissions.join(', ')}`);
       }
 
       // Create execution sandbox
       const sandbox = createSandbox(context, this.allowedGlobals);
 
       // Create the function from the tool's string representation
-      const toolFunction = this._createToolFunction(tool.func, sandbox);
+      const toolFunction = this._createToolFunction(toolDef.func, sandbox);
 
       // Execute with timeout
       const result = await this._executeWithTimeout(toolFunction, args, this.timeout);
@@ -62,7 +63,7 @@ export class ToolExecutor {
         output: result,
         duration: Date.now() - startTime,
         toolName,
-        toolVersion: tool.version
+        toolVersion: toolDef.version
       };
 
     } catch (error) {

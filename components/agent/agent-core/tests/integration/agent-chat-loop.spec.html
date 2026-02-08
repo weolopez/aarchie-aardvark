@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Chat Loop - Integration Tests</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <div class="max-w-4xl mx-auto p-6">
+    <header class="mb-8">
+      <h1 class="text-3xl font-bold text-gray-800 mb-2">Agent Chat Loop - Integration Tests</h1>
+      <p class="text-gray-600">Testing end-to-end agent chat functionality with tool execution</p>
+    </header>
+
+    <div id="test-results" class="space-y-4">
+      <div class="bg-blue-50 border-l-4 border-blue-400 p-4">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 000 16zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+            </svg>
+          </div>
+          <div class="ml-3">
+            <p class="text-sm text-blue-700">
+              Running Agent Chat Loop integration tests...
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="test-status" class="mt-8 hidden">
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">Test Results</h2>
+        <div class="flex items-center space-x-4 mb-4">
+          <span id="status-badge" class="px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">Running...</span>
+          <span id="total-count" class="text-gray-600">0</span> total,
+          <span id="pass-count" class="text-green-600">0</span> passed,
+          <span id="fail-count" class="text-red-600">0</span> failed
+        </div>
+        <div id="status-content"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { AgentCore } from '../../../src/agent-core.js';
+    import { ToolDispatcher } from '../../../src/tool-dispatcher.js';
+    import { MessageHandler } from '../../../src/message-handler.js';
+    import { LLMClient } from '../../../src/llm-client.js';
+    import { AgentConfig } from '../../../src/config.js';
+
+    // Test utilities
+    const tests = [];
+    let passed = 0;
+    let failed = 0;
+
+    function test(name, fn) {
+      tests.push({ name, fn });
+    }
+
+    function assert(condition, message) {
+      if (!condition) {
+        throw new Error(message);
+      }
+    }
+
+    function assertEqual(actual, expected, message) {
+      if (actual !== expected) {
+        throw new Error(`${message}: expected ${expected}, got ${actual}`);
+      }
+    }
+
+    // Mock LLM Client for testing
+    class MockLLMClient {
+      constructor() {
+        this.responses = [];
+        this.callCount = 0;
+      }
+
+      async chat(messages, tools) {
+        this.callCount++;
+        const response = this.responses.shift() || {
+          content: 'Mock response',
+          toolCalls: []
+        };
+        return response;
+      }
+
+      setResponses(responses) {
+        this.responses = [...responses];
+      }
+    }
+
+    // Mock Tool Executor
+    class MockToolExecutor {
+      constructor() {
+        this.executions = [];
+      }
+
+      async execute(toolName, args, context) {
+        this.executions.push({ toolName, args, context });
+
+        if (toolName === 'read_file') {
+          return {
+            success: true,
+            output: `Content of ${args.path}`,
+            duration: 10
+          };
+        }
+
+        if (toolName === 'run_terminal') {
+          return {
+            success: true,
+            output: `Executed: ${args.command}`,
+            duration: 50
+          };
+        }
+
+        return {
+          success: false,
+          error: `Unknown tool: ${toolName}`,
+          duration: 5
+        };
+      }
+    }
+
+    // Test definitions
+    test('Agent Chat Loop - simple conversation', async () => {
+      const config = new Config();
+      const llmClient = new MockLLMClient();
+      const toolExecutor = new MockToolExecutor();
+      const toolDispatcher = new ToolDispatcher();
+      toolDispatcher.toolExecutor = toolExecutor;
+      const messageHandler = new MessageHandler();
+
+      const agent = new AgentCore(config, llmClient, toolDispatcher, messageHandler);
+
+      // Set up mock LLM response
+      llmClient.setResponses([{
+        content: 'Hello! How can I help you today?',
+        toolCalls: []
+      }]);
+
+      const messages = [
+        { role: 'user', content: 'Hello' }
+      ];
+
+      const result = await agent.chat(messages);
+
+      assert(result.success, 'Should complete successfully');
+      assertEqual(result.response.content, 'Hello! How can I help you today?', 'Should return mock response');
+      assertEqual(llmClient.callCount, 1, 'Should call LLM once');
+    });
+
+    test('Agent Chat Loop - tool execution', async () => {
+      const config = new Config();
+      const llmClient = new MockLLMClient();
+      const toolExecutor = new MockToolExecutor();
+      const toolDispatcher = new ToolDispatcher();
+      toolDispatcher.toolExecutor = toolExecutor;
+      const messageHandler = new MessageHandler();
+
+      const agent = new AgentCore(config, llmClient, toolDispatcher, messageHandler);
+
+      // Set up mock LLM responses: first with tool call, then with final response
+      llmClient.setResponses([
+        {
+          content: '',
+          toolCalls: [{
+            id: 'call_1',
+            type: 'function',
+            function: {
+              name: 'read_file',
+              arguments: '{"path": "/test.txt"}'
+            }
+          }]
+        },
+        {
+          content: 'I found the content of the file.',
+          toolCalls: []
+        }
+      ]);
+
+      const messages = [
+        { role: 'user', content: 'Please read the file /test.txt' }
+      ];
+
+      const result = await agent.chat(messages);
+
+      assert(result.success, 'Should complete successfully');
+      assertEqual(result.response.content, 'I found the content of the file.', 'Should return final response');
+      assertEqual(llmClient.callCount, 2, 'Should call LLM twice (initial + after tool execution)');
+      assertEqual(toolExecutor.executions.length, 1, 'Should execute one tool');
+      assertEqual(toolExecutor.executions[0].toolName, 'read_file', 'Should execute read_file tool');
+      assertEqual(toolExecutor.executions[0].args.path, '/test.txt', 'Should pass correct arguments');
+    });
+
+    test('Agent Chat Loop - multiple tool calls', async () => {
+      const config = new Config();
+      const llmClient = new MockLLMClient();
+      const toolExecutor = new MockToolExecutor();
+      const toolDispatcher = new ToolDispatcher();
+      toolDispatcher.toolExecutor = toolExecutor;
+      const messageHandler = new MessageHandler();
+
+      const agent = new AgentCore(config, llmClient, toolDispatcher, messageHandler);
+
+      // Set up mock LLM responses
+      llmClient.setResponses([
+        {
+          content: '',
+          toolCalls: [
+            {
+              id: 'call_1',
+              type: 'function',
+              function: {
+                name: 'read_file',
+                arguments: '{"path": "/file1.txt"}'
+              }
+            },
+            {
+              id: 'call_2',
+              type: 'function',
+              function: {
+                name: 'run_terminal',
+                arguments: '{"command": "ls -la"}'
+              }
+            }
+          ]
+        },
+        {
+          content: 'I executed both operations successfully.',
+          toolCalls: []
+        }
+      ]);
+
+      const messages = [
+        { role: 'user', content: 'Read a file and list directory contents' }
+      ];
+
+      const result = await agent.chat(messages);
+
+      assert(result.success, 'Should complete successfully');
+      assertEqual(llmClient.callCount, 2, 'Should call LLM twice');
+      assertEqual(toolExecutor.executions.length, 2, 'Should execute two tools');
+      assertEqual(toolExecutor.executions[0].toolName, 'read_file', 'Should execute read_file first');
+      assertEqual(toolExecutor.executions[1].toolName, 'run_terminal', 'Should execute run_terminal second');
+    });
+
+    test('Agent Chat Loop - tool execution failure', async () => {
+      const config = new Config();
+      const llmClient = new MockLLMClient();
+      const toolExecutor = new MockToolExecutor();
+      const toolDispatcher = new ToolDispatcher();
+      toolDispatcher.toolExecutor = toolExecutor;
+      const messageHandler = new MessageHandler();
+
+      const agent = new AgentCore(config, llmClient, toolDispatcher, messageHandler);
+
+      // Override tool executor to simulate failure
+      toolExecutor.execute = async () => ({
+        success: false,
+        error: 'Tool execution failed',
+        duration: 5
+      });
+
+      // Set up mock LLM responses
+      llmClient.setResponses([
+        {
+          content: '',
+          toolCalls: [{
+            id: 'call_1',
+            type: 'function',
+            function: {
+              name: 'failing_tool',
+              arguments: '{}'
+            }
+          }]
+        },
+        {
+          content: 'I encountered an error while executing the tool.',
+          toolCalls: []
+        }
+      ]);
+
+      const messages = [
+        { role: 'user', content: 'Execute a failing tool' }
+      ];
+
+      const result = await agent.chat(messages);
+
+      assert(result.success, 'Should complete successfully despite tool failure');
+      assertEqual(result.response.content, 'I encountered an error while executing the tool.', 'Should return error response');
+      assertEqual(llmClient.callCount, 2, 'Should call LLM twice');
+      assertEqual(toolExecutor.executions.length, 1, 'Should attempt to execute tool');
+    });
+
+    test('Agent Chat Loop - max tool calls limit', async () => {
+      const config = new Config({ agent: { maxToolCalls: 2 } });
+      const llmClient = new MockLLMClient();
+      const toolExecutor = new MockToolExecutor();
+      const toolDispatcher = new ToolDispatcher();
+      toolDispatcher.toolExecutor = toolExecutor;
+      const messageHandler = new MessageHandler();
+
+      const agent = new AgentCore(config, llmClient, toolDispatcher, messageHandler);
+
+      // Set up mock LLM to keep calling tools
+      llmClient.setResponses([
+        {
+          content: '',
+          toolCalls: [{
+            id: 'call_1',
+            type: 'function',
+            function: {
+              name: 'read_file',
+              arguments: '{"path": "/test1.txt"}'
+            }
+          }]
+        },
+        {
+          content: '',
+          toolCalls: [{
+            id: 'call_2',
+            type: 'function',
+            function: {
+              name: 'read_file',
+              arguments: '{"path": "/test2.txt"}'
+            }
+          }]
+        },
+        {
+          content: '',
+          toolCalls: [{
+            id: 'call_3',
+            type: 'function',
+            function: {
+              name: 'read_file',
+              arguments: '{"path": "/test3.txt"}'
+            }
+          }]
+        },
+        {
+          content: 'Maximum tool calls reached.',
+          toolCalls: []
+        }
+      ]);
+
+      const messages = [
+        { role: 'user', content: 'Keep calling tools' }
+      ];
+
+      const result = await agent.chat(messages);
+
+      assert(result.success, 'Should complete successfully');
+      assertEqual(toolExecutor.executions.length, 2, 'Should stop at max tool calls limit');
+      assertEqual(llmClient.callCount, 3, 'Should call LLM 3 times (2 tool calls + 1 final)');
+    });
+
+    test('Agent Chat Loop - timeout handling', async () => {
+      const config = new Config({ agent: { timeout: 100 } }); // Very short timeout
+      const llmClient = new MockLLMClient();
+      const toolExecutor = new MockToolExecutor();
+      const toolDispatcher = new ToolDispatcher();
+      toolDispatcher.toolExecutor = toolExecutor;
+      const messageHandler = new MessageHandler();
+
+      const agent = new AgentCore(config, llmClient, toolDispatcher, messageHandler);
+
+      // Make tool execution slow
+      toolExecutor.execute = async () => {
+        await new Promise(resolve => setTimeout(resolve, 200)); // Longer than timeout
+        return { success: true, output: 'Slow result', duration: 200 };
+      };
+
+      llmClient.setResponses([{
+        content: '',
+        toolCalls: [{
+          id: 'call_1',
+          type: 'function',
+          function: {
+            name: 'slow_tool',
+            arguments: '{}'
+          }
+        }]
+      }]);
+
+      const messages = [
+        { role: 'user', content: 'Execute slow tool' }
+      ];
+
+      const result = await agent.chat(messages);
+
+      assert(!result.success, 'Should fail due to timeout');
+      assert(result.error.includes('timeout'), 'Should indicate timeout error');
+    });
+
+    test('Agent Chat Loop - permission denied', async () => {
+      const config = new Config();
+      const llmClient = new MockLLMClient();
+      const toolExecutor = new MockToolExecutor();
+      const toolDispatcher = new ToolDispatcher();
+      toolDispatcher.toolExecutor = toolExecutor;
+      const messageHandler = new MessageHandler();
+
+      const agent = new AgentCore(config, llmClient, toolDispatcher, messageHandler);
+
+      // Set up mock LLM response with tool call
+      llmClient.setResponses([
+        {
+          content: '',
+          toolCalls: [{
+            id: 'call_1',
+            type: 'function',
+            function: {
+              name: 'run_terminal',
+              arguments: '{"command": "rm -rf /"}'
+            }
+          }]
+        },
+        {
+          content: 'I cannot execute that command due to insufficient permissions.',
+          toolCalls: []
+        }
+      ]);
+
+      const messages = [
+        { role: 'user', content: 'Delete everything' }
+      ];
+
+      // Mock tool dispatcher to deny permissions
+      toolDispatcher.execute = async () => ({
+        success: false,
+        error: 'Tool requires permissions: [admin] but only [fs] granted',
+        duration: 5
+      });
+
+      const result = await agent.chat(messages);
+
+      assert(result.success, 'Should complete successfully');
+      assert(result.response.content.includes('permissions'), 'Should indicate permission issue');
+      assertEqual(llmClient.callCount, 2, 'Should call LLM twice');
+    });
+
+    test('Agent Chat Loop - conversation history', async () => {
+      const config = new Config();
+      const llmClient = new MockLLMClient();
+      const toolExecutor = new MockToolExecutor();
+      const toolDispatcher = new ToolDispatcher();
+      toolDispatcher.toolExecutor = toolExecutor;
+      const messageHandler = new MessageHandler();
+
+      const agent = new AgentCore(config, llmClient, toolDispatcher, messageHandler);
+
+      // Track LLM calls to verify conversation history
+      const llmCalls = [];
+      llmClient.chat = async (messages, tools) => {
+        llmCalls.push([...messages]); // Copy messages
+        return {
+          content: `Response ${llmCalls.length}`,
+          toolCalls: []
+        };
+      };
+
+      // First conversation
+      await agent.chat([
+        { role: 'user', content: 'Hello' }
+      ]);
+
+      // Second conversation
+      await agent.chat([
+        { role: 'user', content: 'How are you?' }
+      ]);
+
+      assertEqual(llmCalls.length, 2, 'Should have 2 LLM calls');
+      assertEqual(llmCalls[0].length, 1, 'First call should have 1 message');
+      assertEqual(llmCalls[0][0].content, 'Hello', 'First message should be preserved');
+      assertEqual(llmCalls[1].length, 1, 'Second call should have 1 message');
+      assertEqual(llmCalls[1][0].content, 'How are you?', 'Second message should be preserved');
+    });
+
+    test('Agent Chat Loop - error recovery', async () => {
+      const config = new Config();
+      const llmClient = new MockLLMClient();
+      const toolExecutor = new MockToolExecutor();
+      const toolDispatcher = new ToolDispatcher();
+      toolDispatcher.toolExecutor = toolExecutor;
+      const messageHandler = new MessageHandler();
+
+      const agent = new AgentCore(config, llmClient, toolDispatcher, messageHandler);
+
+      // Make LLM fail on first call, succeed on second
+      let callCount = 0;
+      llmClient.chat = async () => {
+        callCount++;
+        if (callCount === 1) {
+          throw new Error('LLM service unavailable');
+        }
+        return {
+          content: 'Recovered from error',
+          toolCalls: []
+        };
+      };
+
+      const messages = [
+        { role: 'user', content: 'Test error recovery' }
+      ];
+
+      const result = await agent.chat(messages);
+
+      assert(result.success, 'Should recover from LLM error');
+      assertEqual(result.response.content, 'Recovered from error', 'Should return recovery response');
+      assertEqual(callCount, 2, 'Should retry after failure');
+    });
+
+    // Run tests
+    async function runTests() {
+      const resultsDiv = document.getElementById('test-results');
+
+      for (const test of tests) {
+        try {
+          await test.fn();
+          passed++;
+          resultsDiv.innerHTML += `
+            <div class="bg-green-50 border-l-4 border-green-400 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+              </svg>
+                </div>
+                <div class="ml-3">
+                  <p class="text-sm text-green-700">✓ ${test.name}</p>
+                </div>
+              </div>
+            </div>
+          `;
+        } catch (error) {
+          failed++;
+          resultsDiv.innerHTML += `
+            <div class="bg-red-50 border-l-4 border-red-400 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+              </svg>
+                </div>
+                <div class="ml-3">
+                  <p class="text-sm text-red-700">✗ ${test.name}</p>
+                  <p class="text-sm text-red-600 mt-1">${error.message}</p>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      // Show final results
+      const statusDiv = document.getElementById('test-status');
+      const statusContent = document.getElementById('status-content');
+
+      statusDiv.classList.remove('hidden');
+      statusContent.innerHTML = `
+        <div class="grid grid-cols-3 gap-4 mb-4">
+          <div class="text-center">
+            <div class="text-2xl font-bold text-green-600">${passed}</div>
+            <div class="text-sm text-gray-600">Passed</div>
+          </div>
+          <div class="text-center">
+            <div class="text-2xl font-bold text-red-600">${failed}</div>
+            <div class="text-sm text-gray-600">Failed</div>
+          </div>
+          <div class="text-center">
+            <div class="text-2xl font-bold text-blue-600">${passed + failed}</div>
+            <div class="text-sm text-gray-600">Total</div>
+          </div>
+        </div>
+        ${failed === 0 ?
+          '<div class="bg-green-50 border-l-4 border-green-400 p-4"><p class="text-green-700">All tests passed! ✅</p></div>' :
+          '<div class="bg-red-50 border-l-4 border-red-400 p-4"><p class="text-red-700">Some tests failed. Please review the errors above.</p></div>'
+        }
+      `;
+
+      // Set elements for test runner
+      const statusBadge = document.getElementById('status-badge');
+      const totalCount = document.getElementById('total-count');
+      const passCount = document.getElementById('pass-count');
+      const failCount = document.getElementById('fail-count');
+
+      const total = passed + failed;
+      statusBadge.textContent = failed === 0 ? 'Passed' : 'Failed';
+      statusBadge.className = `px-3 py-1 rounded-full text-sm font-medium ${failed === 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`;
+      totalCount.textContent = total.toString();
+      passCount.textContent = passed.toString();
+      failCount.textContent = failed.toString();
+    }
+
+    // Run tests when page loads
+    runTests().catch(error => {
+      console.error('Test runner failed:', error);
+      document.getElementById('test-results').innerHTML += `
+        <div class="bg-red-50 border-l-4 border-red-400 p-4">
+          <p class="text-red-700">Test runner failed: ${error.message}</p>
+        </div>
+      `;
+    });
+  </script>
+</body>
+</html>

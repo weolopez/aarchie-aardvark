@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Config - Unit Tests</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <div class="max-w-4xl mx-auto p-6">
+    <header class="mb-8">
+      <h1 class="text-3xl font-bold text-gray-800 mb-2">Config - Unit Tests</h1>
+      <p class="text-gray-600">Testing configuration management and validation</p>
+    </header>
+
+    <div id="test-results" class="space-y-4">
+      <div class="bg-blue-50 border-l-4 border-blue-400 p-4">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 000 16zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+            </svg>
+          </div>
+          <div class="ml-3">
+            <p class="text-sm text-blue-700">
+              Running Config unit tests...
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="test-status" class="mt-8 hidden">
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">Test Results</h2>
+        <div class="flex items-center space-x-4 mb-4">
+          <span id="status-badge" class="px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">Running...</span>
+          <span id="total-count" class="text-gray-600">0</span> total,
+          <span id="pass-count" class="text-green-600">0</span> passed,
+          <span id="fail-count" class="text-red-600">0</span> failed
+        </div>
+        <div id="status-content"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { AgentConfig } from '../../../src/config.js';
+
+    // Test utilities
+    const tests = [];
+    let passed = 0;
+    let failed = 0;
+
+    function test(name, fn) {
+      tests.push({ name, fn });
+    }
+
+    function assert(condition, message) {
+      if (!condition) {
+        throw new Error(message);
+      }
+    }
+
+    function assertEqual(actual, expected, message) {
+      if (actual !== expected) {
+        throw new Error(`${message}: expected ${expected}, got ${actual}`);
+      }
+    }
+
+    function assertDeepEqual(actual, expected, message) {
+      if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+        throw new Error(`${message}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+      }
+    }
+
+    // Test definitions
+    test('AgentConfig constructor - defaults', () => {
+      const config = new AgentConfig();
+
+      assert(config instanceof AgentConfig, 'Should create AgentConfig instance');
+      assertEqual(config.model, 'gpt-4', 'Should set default model');
+      assertEqual(config.temperature, 0.7, 'Should set default temperature');
+      assertEqual(config.maxTokens, 4096, 'Should set default max tokens');
+      assert(Array.isArray(config.defaultPermissions), 'Should have default permissions');
+    });
+
+    test('AgentConfig constructor - custom values', () => {
+      const config = new AgentConfig({
+        apiKey: 'sk-test-key',
+        model: 'gpt-3.5-turbo',
+        temperature: 0.5,
+        maxTokens: 2048
+      });
+
+      assertEqual(config.apiKey, 'sk-test-key', 'Should set API key');
+      assertEqual(config.model, 'gpt-3.5-turbo', 'Should set custom model');
+      assertEqual(config.temperature, 0.5, 'Should set custom temperature');
+      assertEqual(config.maxTokens, 2048, 'Should set custom max tokens');
+    });
+
+    test('AgentConfig validate - valid config', () => {
+      const config = AgentConfig.validate({
+        apiKey: 'sk-test-key-for-testing-purposes-12345',
+        model: 'gpt-4',
+        maxTokens: 2048,
+        temperature: 0.5
+      });
+
+      assert(config instanceof AgentConfig, 'Should create AgentConfig');
+      assertEqual(config.model, 'gpt-4', 'Should set model');
+      assertEqual(config.maxTokens, 2048, 'Should set max tokens');
+    });
+
+    test('AgentConfig validate - missing API key', () => {
+      try {
+        AgentConfig.validate({ model: 'gpt-4' });
+        throw new Error('Should have thrown');
+      } catch (error) {
+        assert(error.message.includes('API key'), 'Should require API key');
+      }
+    });
+
+    test('AgentConfig validate - invalid temperature', () => {
+      try {
+        AgentConfig.validate({
+          apiKey: 'sk-test-key-for-testing-purposes-12345',
+          temperature: 3.0
+        });
+        throw new Error('Should have thrown');
+      } catch (error) {
+        assert(error.message.includes('temperature'), 'Should validate temperature');
+      }
+    });
+
+    test('AgentConfig validate - invalid max tokens', () => {
+      try {
+        AgentConfig.validate({
+          apiKey: 'sk-test-key-for-testing-purposes-12345',
+          maxTokens: -1
+        });
+        throw new Error('Should have thrown');
+      } catch (error) {
+        assert(error.message.includes('maxTokens'), 'Should validate max tokens');
+      }
+    });
+
+    test('AgentConfig isValid - valid config', () => {
+      const config = new AgentConfig({
+        apiKey: 'sk-test-key-for-testing-purposes-12345',
+        model: 'gpt-4',
+        maxTokens: 2048,
+        temperature: 0.5
+      });
+
+      assert(config.isValid(), 'Should be valid');
+    });
+
+    test('AgentConfig isValid - invalid config', () => {
+      const config = new AgentConfig({
+        apiKey: '', // Invalid
+        temperature: -1 // Invalid
+      });
+
+      assert(!config.isValid(), 'Should be invalid');
+    });
+
+    test('AgentConfig isValid - missing API key', () => {
+      const config = new AgentConfig({
+        // Missing apiKey
+        model: 'gpt-4'
+      });
+
+      assert(!config.isValid(), 'Should be invalid without API key');
+    });
+
+    test('AgentConfig isValid - invalid temperature range', () => {
+      const config = new AgentConfig({
+        apiKey: 'sk-test-key-for-testing-purposes-12345',
+        temperature: 3.0 // Too high
+      });
+
+      assert(!config.isValid(), 'Should be invalid with out-of-range temperature');
+    });
+
+    test('AgentConfig getSummary', () => {
+      const config = new AgentConfig({
+        apiKey: 'sk-test-key',
+        model: 'gpt-4',
+        maxTokens: 2048,
+        temperature: 0.5,
+        defaultPermissions: ['fs', 'network']
+      });
+
+      const summary = config.getSummary();
+      assert(summary.includes('gpt-4'), 'Should include model');
+      assert(summary.includes('2048'), 'Should include max tokens');
+      assert(summary.includes('0.5'), 'Should include temperature');
+      assert(summary.includes('fs'), 'Should include permissions');
+    });
+
+    test('AgentConfig getDefault', () => {
+      const config = AgentConfig.getDefault();
+
+      assert(config instanceof AgentConfig, 'Should return AgentConfig instance');
+      assert(config.apiKey, 'Should have API key');
+      assertEqual(config.model, 'gpt-4', 'Should have default model');
+    });
+
+    // Run tests
+    async function runTests() {
+      const resultsDiv = document.getElementById('test-results');
+
+      for (const test of tests) {
+        try {
+          await test.fn();
+          passed++;
+          resultsDiv.innerHTML += `
+            <div class="bg-green-50 border-l-4 border-green-400 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+              </svg>
+                </div>
+                <div class="ml-3">
+                  <p class="text-sm text-green-700">✓ ${test.name}</p>
+                </div>
+              </div>
+            </div>
+          `;
+        } catch (error) {
+          failed++;
+          resultsDiv.innerHTML += `
+            <div class="bg-red-50 border-l-4 border-red-400 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+              </svg>
+                </div>
+                <div class="ml-3">
+                  <p class="text-sm text-red-700">✗ ${test.name}</p>
+                  <p class="text-sm text-red-600 mt-1">${error.message}</p>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      // Show final results
+      const statusDiv = document.getElementById('test-status');
+      const statusContent = document.getElementById('status-content');
+
+      statusDiv.classList.remove('hidden');
+      statusContent.innerHTML = `
+        <div class="grid grid-cols-3 gap-4 mb-4">
+          <div class="text-center">
+            <div class="text-2xl font-bold text-green-600">${passed}</div>
+            <div class="text-sm text-gray-600">Passed</div>
+          </div>
+          <div class="text-center">
+            <div class="text-2xl font-bold text-red-600">${failed}</div>
+            <div class="text-sm text-gray-600">Failed</div>
+          </div>
+          <div class="text-center">
+            <div class="text-2xl font-bold text-blue-600">${passed + failed}</div>
+            <div class="text-sm text-gray-600">Total</div>
+          </div>
+        </div>
+        ${failed === 0 ?
+          '<div class="bg-green-50 border-l-4 border-green-400 p-4"><p class="text-green-700">All tests passed! ✅</p></div>' :
+          '<div class="bg-red-50 border-l-4 border-red-400 p-4"><p class="text-red-700">Some tests failed. Please review the errors above.</p></div>'
+        }
+      `;
+
+      // Set elements for test runner
+      const statusBadge = document.getElementById('status-badge');
+      const totalCount = document.getElementById('total-count');
+      const passCount = document.getElementById('pass-count');
+      const failCount = document.getElementById('fail-count');
+
+      const total = passed + failed;
+      statusBadge.textContent = failed === 0 ? 'Passed' : 'Failed';
+      statusBadge.className = `px-3 py-1 rounded-full text-sm font-medium ${failed === 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`;
+      totalCount.textContent = total.toString();
+      passCount.textContent = passed.toString();
+      failCount.textContent = failed.toString();
+    }
+
+    // Run tests when page loads
+    runTests().catch(error => {
+      console.error('Test runner failed:', error);
+      document.getElementById('test-results').innerHTML += `
+        <div class="bg-red-50 border-l-4 border-red-400 p-4">
+          <p class="text-red-700">Test runner failed: ${error.message}</p>
+        </div>
+      `;
+    });
+  </script>
+</body>
+</html>

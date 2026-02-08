@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tool Execution Flow - Integration Tests</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <div class="max-w-4xl mx-auto p-6">
+    <header class="mb-8">
+      <h1 class="text-3xl font-bold text-gray-800 mb-2">Tool Execution Flow - Integration Tests</h1>
+      <p class="text-gray-600">Testing tool discovery, validation, execution, and result handling</p>
+    </header>
+
+    <div id="test-results" class="space-y-4">
+      <div class="bg-blue-50 border-l-4 border-blue-400 p-4">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 000 16zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+            </svg>
+          </div>
+          <div class="ml-3">
+            <p class="text-sm text-blue-700">
+              Running Tool Execution Flow integration tests...
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="test-status" class="mt-8 hidden">
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">Test Results</h2>
+        <div class="flex items-center space-x-4 mb-4">
+          <span id="status-badge" class="px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">Running...</span>
+          <span id="total-count" class="text-gray-600">0</span> total,
+          <span id="pass-count" class="text-green-600">0</span> passed,
+          <span id="fail-count" class="text-red-600">0</span> failed
+        </div>
+        <div id="status-content"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { ToolDispatcher } from '../../../src/tool-dispatcher.js';
+    import { ToolExecutor } from '../../../../tool-executor/src/tool-executor.js';
+
+    // Test utilities
+    const tests = [];
+    let passed = 0;
+    let failed = 0;
+
+    function test(name, fn) {
+      tests.push({ name, fn });
+    }
+
+    function assert(condition, message) {
+      if (!condition) {
+        throw new Error(message);
+      }
+    }
+
+    function assertEqual(actual, expected, message) {
+      if (actual !== expected) {
+        throw new Error(`${message}: expected ${expected}, got ${actual}`);
+      }
+    }
+
+    // Test definitions
+    test('Tool Execution Flow - successful file read', async () => {
+      const dispatcher = new ToolDispatcher();
+      const executor = new ToolExecutor();
+      dispatcher.toolExecutor = executor;
+
+      // Mock file system for testing
+      global.fs = {
+        readFileSync: (path) => `Content of ${path}`,
+        existsSync: (path) => true
+      };
+
+      const context = { permissions: ['fs'] };
+      const result = await dispatcher.execute('read_file', { path: '/test.txt' }, context);
+
+      assert(result.success, 'Should succeed for valid file read');
+      assertEqual(result.output, 'Content of /test.txt', 'Should return file content');
+      assert(result.duration > 0, 'Should include execution duration');
+    });
+
+    test('Tool Execution Flow - terminal command execution', async () => {
+      const dispatcher = new ToolDispatcher();
+      const executor = new ToolExecutor();
+      dispatcher.toolExecutor = executor;
+
+      // Mock terminal execution
+      global.child_process = {
+        execSync: (command) => `Output of: ${command}`
+      };
+
+      const context = { permissions: ['fs', 'network'] };
+      const result = await dispatcher.execute('run_terminal', { command: 'ls -la' }, context);
+
+      assert(result.success, 'Should succeed for terminal command');
+      assertEqual(result.output, 'Output of: ls -la', 'Should return command output');
+      assert(result.duration > 0, 'Should include execution duration');
+    });
+
+    test('Tool Execution Flow - tool discovery and listing', async () => {
+      const dispatcher = new ToolDispatcher();
+
+      const tools = dispatcher.getAvailableTools();
+
+      assert(Array.isArray(tools), 'Should return array of tools');
+      assert(tools.length > 0, 'Should have built-in tools');
+
+      const readFileTool = tools.find(t => t.name === 'read_file');
+      assert(readFileTool, 'Should include read_file tool');
+      assert(readFileTool.parameters, 'Should include tool parameters');
+      assert(Array.isArray(readFileTool.permissions), 'Should include permissions array');
+    });
+
+    test('Tool Execution Flow - argument validation', async () => {
+      const dispatcher = new ToolDispatcher();
+      const executor = new ToolExecutor();
+      dispatcher.toolExecutor = executor;
+
+      // Test missing required argument
+      const context = { permissions: ['fs'] };
+      const result = await dispatcher.execute('read_file', {}, context); // Missing 'path'
+
+      assert(!result.success, 'Should fail with missing required args');
+      assert(result.error.includes('required'), 'Should indicate missing parameter');
+    });
+
+    test('Tool Execution Flow - permission enforcement', async () => {
+      const dispatcher = new ToolDispatcher();
+      const executor = new ToolExecutor();
+      dispatcher.toolExecutor = executor;
+
+      // Try to execute tool without required permissions
+      const context = { permissions: [] }; // No permissions
+      const result = await dispatcher.execute('read_file', { path: '/test.txt' }, context);
+
+      assert(!result.success, 'Should fail without permissions');
+      assert(result.error.includes('requires permissions'), 'Should indicate permission requirement');
+    });
+
+    test('Tool Execution Flow - custom tool registration', async () => {
+      const dispatcher = new ToolDispatcher();
+
+      const customTool = {
+        name: 'custom_greet',
+        description: 'A custom greeting tool',
+        parameters: {
+          type: 'object',
+          properties: {
+            name: { type: 'string' }
+          },
+          required: ['name']
+        },
+        permissions: ['custom']
+      };
+
+      dispatcher.registerTool(customTool);
+
+      const tools = dispatcher.getAvailableTools();
+      const found = tools.find(t => t.name === 'custom_greet');
+      assert(found, 'Should register custom tool');
+      assertEqual(found.description, 'A custom greeting tool', 'Should store tool description');
+    });
+
+    test('Tool Execution Flow - custom tool execution', async () => {
+      const dispatcher = new ToolDispatcher();
+      const executor = new ToolExecutor();
+      dispatcher.toolExecutor = executor;
+
+      // Register custom tool
+      dispatcher.registerTool({
+        name: 'custom_greet',
+        description: 'A custom greeting tool',
+        parameters: {
+          type: 'object',
+          properties: {
+            name: { type: 'string' }
+          },
+          required: ['name']
+        },
+        permissions: ['custom']
+      });
+
+      // Mock executor for custom tool
+      executor.execute = async (toolName, args) => {
+        if (toolName === 'custom_greet') {
+          return {
+            success: true,
+            output: `Hello, ${args.name}!`,
+            duration: 5
+          };
+        }
+        return { success: false, error: 'Unknown tool' };
+      };
+
+      const context = { permissions: ['custom'] };
+      const result = await dispatcher.execute('custom_greet', { name: 'World' }, context);
+
+      assert(result.success, 'Should execute custom tool successfully');
+      assertEqual(result.output, 'Hello, World!', 'Should return custom tool output');
+    });
+
+    test('Tool Execution Flow - tool unregistration', async () => {
+      const dispatcher = new ToolDispatcher();
+
+      // Register a tool
+      dispatcher.registerTool({
+        name: 'temp_tool',
+        description: 'Temporary tool',
+        parameters: { type: 'object', properties: {} },
+        permissions: []
+      });
+
+      // Verify it's registered
+      let tools = dispatcher.getAvailableTools();
+      assert(tools.find(t => t.name === 'temp_tool'), 'Should have registered tool');
+
+      // Unregister it
+      dispatcher.unregisterTool('temp_tool');
+
+      // Verify it's gone
+      tools = dispatcher.getAvailableTools();
+      assert(!tools.find(t => t.name === 'temp_tool'), 'Should have unregistered tool');
+    });
+
+    test('Tool Execution Flow - concurrent tool execution', async () => {
+      const dispatcher = new ToolDispatcher();
+      const executor = new ToolExecutor();
+      dispatcher.toolExecutor = executor;
+
+      // Mock slow execution
+      let executionCount = 0;
+      executor.execute = async (toolName, args) => {
+        executionCount++;
+        await new Promise(resolve => setTimeout(resolve, 10)); // Simulate delay
+        return {
+          success: true,
+          output: `Result ${executionCount} for ${toolName}`,
+          duration: 10
+        };
+      };
+
+      const context = { permissions: ['fs'] };
+
+      // Execute multiple tools concurrently
+      const promises = [
+        dispatcher.execute('read_file', { path: '/file1.txt' }, context),
+        dispatcher.execute('read_file', { path: '/file2.txt' }, context),
+        dispatcher.execute('read_file', { path: '/file3.txt' }, context)
+      ];
+
+      const results = await Promise.all(promises);
+
+      assertEqual(results.length, 3, 'Should execute all tools');
+      results.forEach((result, index) => {
+        assert(result.success, `Tool ${index + 1} should succeed`);
+        assert(result.output.includes(`Result ${index + 1}`), `Tool ${index + 1} should have correct output`);
+      });
+    });
+
+    test('Tool Execution Flow - error handling and recovery', async () => {
+      const dispatcher = new ToolDispatcher();
+      const executor = new ToolExecutor();
+      dispatcher.toolExecutor = executor;
+
+      // Mock executor that fails sometimes
+      let callCount = 0;
+      executor.execute = async (toolName, args) => {
+        callCount++;
+        if (callCount === 1) {
+          throw new Error('Temporary failure');
+        }
+        return {
+          success: true,
+          output: 'Recovered result',
+          duration: 5
+        };
+      };
+
+      const context = { permissions: ['fs'] };
+
+      // First call should fail
+      let result = await dispatcher.execute('read_file', { path: '/test.txt' }, context);
+      assert(!result.success, 'First call should fail');
+      assert(result.error.includes('Temporary failure'), 'Should include error message');
+
+      // Second call should succeed (simulating retry)
+      result = await dispatcher.execute('read_file', { path: '/test.txt' }, context);
+      assert(result.success, 'Second call should succeed after recovery');
+      assertEqual(result.output, 'Recovered result', 'Should return recovered result');
+    });
+
+    test('Tool Execution Flow - timeout handling', async () => {
+      const dispatcher = new ToolDispatcher();
+      const executor = new ToolExecutor();
+      dispatcher.toolExecutor = executor;
+
+      // Mock executor that takes too long
+      executor.execute = async (toolName, args) => {
+        await new Promise(resolve => setTimeout(resolve, 100)); // Longer than timeout
+        return { success: true, output: 'Slow result', duration: 100 };
+      };
+
+      const context = { permissions: ['fs'], timeout: 50 }; // Short timeout
+      const result = await dispatcher.execute('read_file', { path: '/test.txt' }, context);
+
+      assert(!result.success, 'Should fail due to timeout');
+      assert(result.error.includes('timeout'), 'Should indicate timeout error');
+    });
+
+    test('Tool Execution Flow - resource cleanup', async () => {
+      const dispatcher = new ToolDispatcher();
+      const executor = new ToolExecutor();
+      dispatcher.toolExecutor = executor;
+
+      // Track resources created during execution
+      let resourcesCreated = 0;
+      let resourcesCleaned = 0;
+
+      executor.execute = async (toolName, args) => {
+        resourcesCreated++;
+        // Simulate resource cleanup in finally block
+        try {
+          return {
+            success: true,
+            output: 'Result with resources',
+            duration: 10
+          };
+        } finally {
+          resourcesCleaned++;
+        }
+      };
+
+      const context = { permissions: ['fs'] };
+      const result = await dispatcher.execute('read_file', { path: '/test.txt' }, context);
+
+      assert(result.success, 'Should succeed');
+      assertEqual(resourcesCreated, 1, 'Should create resources');
+      assertEqual(resourcesCleaned, 1, 'Should clean up resources');
+    });
+
+    test('Tool Execution Flow - tool chaining', async () => {
+      const dispatcher = new ToolDispatcher();
+      const executor = new ToolExecutor();
+      dispatcher.toolExecutor = executor;
+
+      // Mock executor for chained operations
+      let executionOrder = [];
+      executor.execute = async (toolName, args) => {
+        executionOrder.push(toolName);
+
+        if (toolName === 'read_file') {
+          return {
+            success: true,
+            output: 'file content: hello world',
+            duration: 10
+          };
+        }
+
+        if (toolName === 'search_text') {
+          return {
+            success: true,
+            output: 'Found "world" at position 12',
+            duration: 5
+          };
+        }
+
+        return { success: false, error: 'Unknown tool' };
+      };
+
+      const context = { permissions: ['fs'] };
+
+      // Execute first tool
+      const result1 = await dispatcher.execute('read_file', { path: '/test.txt' }, context);
+      assert(result1.success, 'First tool should succeed');
+      assertEqual(result1.output, 'file content: hello world', 'Should return file content');
+
+      // Execute second tool based on first result
+      const result2 = await dispatcher.execute('search_text', {
+        content: result1.output,
+        pattern: 'world'
+      }, context);
+
+      assert(result2.success, 'Second tool should succeed');
+      assertEqual(result2.output, 'Found "world" at position 12', 'Should return search result');
+      assertEqual(executionOrder, ['read_file', 'search_text'], 'Should execute tools in order');
+    });
+
+    // Run tests
+    async function runTests() {
+      const resultsDiv = document.getElementById('test-results');
+
+      for (const test of tests) {
+        try {
+          await test.fn();
+          passed++;
+          resultsDiv.innerHTML += `
+            <div class="bg-green-50 border-l-4 border-green-400 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+              </svg>
+                </div>
+                <div class="ml-3">
+                  <p class="text-sm text-green-700">✓ ${test.name}</p>
+                </div>
+              </div>
+            </div>
+          `;
+        } catch (error) {
+          failed++;
+          resultsDiv.innerHTML += `
+            <div class="bg-red-50 border-l-4 border-red-400 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+              </svg>
+                </div>
+                <div class="ml-3">
+                  <p class="text-sm text-red-700">✗ ${test.name}</p>
+                  <p class="text-sm text-red-600 mt-1">${error.message}</p>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      // Show final results
+      const statusDiv = document.getElementById('test-status');
+      const statusContent = document.getElementById('status-content');
+
+      statusDiv.classList.remove('hidden');
+      statusContent.innerHTML = `
+        <div class="grid grid-cols-3 gap-4 mb-4">
+          <div class="text-center">
+            <div class="text-2xl font-bold text-green-600">${passed}</div>
+            <div class="text-sm text-gray-600">Passed</div>
+          </div>
+          <div class="text-center">
+            <div class="text-2xl font-bold text-red-600">${failed}</div>
+            <div class="text-sm text-gray-600">Failed</div>
+          </div>
+          <div class="text-center">
+            <div class="text-2xl font-bold text-blue-600">${passed + failed}</div>
+            <div class="text-sm text-gray-600">Total</div>
+          </div>
+        </div>
+        ${failed === 0 ?
+          '<div class="bg-green-50 border-l-4 border-green-400 p-4"><p class="text-green-700">All tests passed! ✅</p></div>' :
+          '<div class="bg-red-50 border-l-4 border-red-400 p-4"><p class="text-red-700">Some tests failed. Please review the errors above.</p></div>'
+        }
+      `;
+
+      // Set elements for test runner
+      const statusBadge = document.getElementById('status-badge');
+      const totalCount = document.getElementById('total-count');
+      const passCount = document.getElementById('pass-count');
+      const failCount = document.getElementById('fail-count');
+
+      const total = passed + failed;
+      statusBadge.textContent = failed === 0 ? 'Passed' : 'Failed';
+      statusBadge.className = `px-3 py-1 rounded-full text-sm font-medium ${failed === 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`;
+      totalCount.textContent = total.toString();
+      passCount.textContent = passed.toString();
+      failCount.textContent = failed.toString();
+    }
+
+    // Run tests when page loads
+    runTests().catch(error => {
+      console.error('Test runner failed:', error);
+      document.getElementById('test-results').innerHTML += `
+        <div class="bg-red-50 border-l-4 border-red-400 p-4">
+          <p class="text-red-700">Test runner failed: ${error.message}</p>
+        </div>
+      `;
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tool Dispatcher - Unit Tests</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <div class="max-w-4xl mx-auto p-6">
+    <header class="mb-8">
+      <h1 class="text-3xl font-bold text-gray-800 mb-2">Tool Dispatcher - Unit Tests</h1>
+      <p class="text-gray-600">Testing tool execution coordination and permission management</p>
+    </header>
+
+    <div id="test-results" class="space-y-4">
+      <div class="bg-blue-50 border-l-4 border-blue-400 p-4">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+            </svg>
+          </div>
+          <div class="ml-3">
+            <p class="text-sm text-blue-700">
+              Running Tool Dispatcher unit tests...
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="test-status" class="mt-8 hidden">
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">Test Results</h2>
+        <div class="flex items-center space-x-4 mb-4">
+          <span id="status-badge" class="px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">Running...</span>
+          <span id="total-count" class="text-gray-600">0</span> total,
+          <span id="pass-count" class="text-green-600">0</span> passed,
+          <span id="fail-count" class="text-red-600">0</span> failed
+        </div>
+        <div id="status-content"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { ToolDispatcher } from '../../../src/tool-dispatcher.js';
+
+    // Test utilities
+    const tests = [];
+    let passed = 0;
+    let failed = 0;
+
+    function test(name, fn) {
+      tests.push({ name, fn });
+    }
+
+    function assert(condition, message) {
+      if (!condition) {
+        throw new Error(message);
+      }
+    }
+
+    function assertEqual(actual, expected, message) {
+      if (actual !== expected) {
+        throw new Error(`${message}: expected ${expected}, got ${actual}`);
+      }
+    }
+
+    // Mock ToolExecutor
+    let mockToolExecutor = {
+      execute: async (toolName, args, context) => {
+        if (toolName === 'failing-tool') {
+          return { success: false, error: 'Tool failed', duration: 10 };
+        }
+        return { success: true, output: `Mock result for ${toolName}`, duration: 5 };
+      }
+    };
+
+    // Test definitions
+    test('ToolDispatcher constructor', () => {
+      const dispatcher = new ToolDispatcher();
+
+      assert(dispatcher instanceof ToolDispatcher, 'Should create ToolDispatcher instance');
+      assert(dispatcher.availableTools instanceof Map, 'Should initialize tools map');
+      assert(dispatcher.availableTools.size > 0, 'Should load built-in tools');
+    });
+
+    test('ToolDispatcher setRepository', async () => {
+      const dispatcher = new ToolDispatcher();
+
+      await dispatcher.setRepository('test/repo');
+      assertEqual(dispatcher.currentRepository, 'test/repo', 'Should set repository');
+    });
+
+    test('ToolDispatcher execute - successful tool', async () => {
+      const dispatcher = new ToolDispatcher();
+      dispatcher.toolExecutor = mockToolExecutor;
+
+      const context = { permissions: ['fs'] };
+      const result = await dispatcher.execute('read_file', { path: '/test.txt' }, context);
+
+      assert(result.success, 'Should succeed for valid tool');
+      assert(result.output.includes('read_file'), 'Should return mock result');
+      assertEqual(result.duration, 5, 'Should include duration');
+    });
+
+    test('ToolDispatcher execute - failing tool', async () => {
+      const dispatcher = new ToolDispatcher();
+      dispatcher.toolExecutor = mockToolExecutor;
+
+      const context = { permissions: [] };
+      const result = await dispatcher.execute('failing-tool', {}, context);
+
+      assert(!result.success, 'Should fail for failing tool');
+      assert(result.error.includes('Tool failed'), 'Should return error message');
+    });
+
+    test('ToolDispatcher execute - unknown tool', async () => {
+      const dispatcher = new ToolDispatcher();
+      dispatcher.toolExecutor = mockToolExecutor;
+
+      const context = { permissions: [] };
+      const result = await dispatcher.execute('unknown-tool', {}, context);
+
+      assert(!result.success, 'Should fail for unknown tool');
+      assert(result.error.includes('not found'), 'Should indicate tool not found');
+    });
+
+    test('ToolDispatcher execute - missing required args', async () => {
+      const dispatcher = new ToolDispatcher();
+      dispatcher.toolExecutor = mockToolExecutor;
+
+      const context = { permissions: ['fs'] };
+      const result = await dispatcher.execute('read_file', {}, context); // Missing 'path'
+
+      assert(!result.success, 'Should fail with missing required args');
+      assert(result.error.includes('required'), 'Should indicate missing parameter');
+    });
+
+    test('ToolDispatcher execute - invalid arg types', async () => {
+      const dispatcher = new ToolDispatcher();
+      dispatcher.toolExecutor = mockToolExecutor;
+
+      const context = { permissions: [] };
+      const result = await dispatcher.execute('execute_javascript', { code: 123 }, context); // code should be string
+
+      assert(!result.success, 'Should fail with invalid arg types');
+      assert(result.error.includes('string'), 'Should indicate type error');
+    });
+
+    test('ToolDispatcher execute - insufficient permissions', async () => {
+      const dispatcher = new ToolDispatcher();
+      dispatcher.toolExecutor = mockToolExecutor;
+
+      const context = { permissions: [] }; // No permissions
+      const result = await dispatcher.execute('read_file', { path: '/test.txt' }, context);
+
+      assert(!result.success, 'Should fail without required permissions');
+      assert(result.error.includes('requires permissions'), 'Should indicate permission requirement');
+    });
+
+    test('ToolDispatcher execute - sufficient permissions', async () => {
+      const dispatcher = new ToolDispatcher();
+      dispatcher.toolExecutor = mockToolExecutor;
+
+      const context = { permissions: ['fs'] }; // Has required permission
+      const result = await dispatcher.execute('read_file', { path: '/test.txt' }, context);
+
+      assert(result.success, 'Should succeed with required permissions');
+    });
+
+    test('ToolDispatcher getAvailableTools', () => {
+      const dispatcher = new ToolDispatcher();
+      const tools = dispatcher.getAvailableTools();
+
+      assert(Array.isArray(tools), 'Should return array of tools');
+      assert(tools.length > 0, 'Should have tools available');
+
+      const readFileTool = tools.find(t => t.name === 'read_file');
+      assert(readFileTool, 'Should include read_file tool');
+      assert(readFileTool.parameters, 'Should include tool parameters');
+    });
+
+    test('ToolDispatcher registerTool', () => {
+      const dispatcher = new ToolDispatcher();
+
+      const customTool = {
+        name: 'custom-tool',
+        description: 'A custom tool',
+        parameters: {
+          type: 'object',
+          properties: { input: { type: 'string' } },
+          required: ['input']
+        },
+        permissions: ['custom']
+      };
+
+      dispatcher.registerTool(customTool);
+
+      const tools = dispatcher.getAvailableTools();
+      const found = tools.find(t => t.name === 'custom-tool');
+      assert(found, 'Should register custom tool');
+      assertEqual(found.description, 'A custom tool', 'Should store tool description');
+    });
+
+    test('ToolDispatcher unregisterTool', () => {
+      const dispatcher = new ToolDispatcher();
+
+      // First register a tool
+      dispatcher.registerTool({
+        name: 'temp-tool',
+        description: 'Temporary tool',
+        parameters: { type: 'object', properties: {} },
+        permissions: []
+      });
+
+      // Verify it's registered
+      let tools = dispatcher.getAvailableTools();
+      assert(tools.find(t => t.name === 'temp-tool'), 'Should have registered tool');
+
+      // Unregister it
+      dispatcher.unregisterTool('temp-tool');
+
+      // Verify it's gone
+      tools = dispatcher.getAvailableTools();
+      assert(!tools.find(t => t.name === 'temp-tool'), 'Should have unregistered tool');
+    });
+
+    test('ToolDispatcher _validateArguments - valid', () => {
+      const dispatcher = new ToolDispatcher();
+
+      const tool = {
+        parameters: {
+          properties: { name: { type: 'string' }, age: { type: 'number' } },
+          required: ['name']
+        }
+      };
+
+      const result = dispatcher._validateArguments({ name: 'John', age: 30 }, tool);
+      assert(result.valid, 'Should validate correct arguments');
+    });
+
+    test('ToolDispatcher _validateArguments - missing required', () => {
+      const dispatcher = new ToolDispatcher();
+
+      const tool = {
+        parameters: {
+          properties: { name: { type: 'string' } },
+          required: ['name']
+        }
+      };
+
+      const result = dispatcher._validateArguments({}, tool);
+      assert(!result.valid, 'Should fail with missing required args');
+      assert(result.errors[0].includes('required'), 'Should indicate required field');
+    });
+
+    test('ToolDispatcher _validateArguments - wrong type', () => {
+      const dispatcher = new ToolDispatcher();
+
+      const tool = {
+        parameters: {
+          properties: { count: { type: 'number' } }
+        }
+      };
+
+      const result = dispatcher._validateArguments({ count: 'not-a-number' }, tool);
+      assert(!result.valid, 'Should fail with wrong type');
+      assert(result.errors[0].includes('number'), 'Should indicate type error');
+    });
+
+    test('ToolDispatcher _checkPermissions - granted', () => {
+      const dispatcher = new ToolDispatcher();
+
+      const tool = { permissions: ['fs', 'network'] };
+      const context = { permissions: ['fs', 'network', 'ui'] };
+
+      const result = dispatcher._checkPermissions(tool, context);
+      assert(result.granted, 'Should grant when all permissions present');
+      assertEqual(result.missing.length, 0, 'Should have no missing permissions');
+    });
+
+    test('ToolDispatcher _checkPermissions - denied', () => {
+      const dispatcher = new ToolDispatcher();
+
+      const tool = { permissions: ['fs', 'admin'] };
+      const context = { permissions: ['fs'] };
+
+      const result = dispatcher._checkPermissions(tool, context);
+      assert(!result.granted, 'Should deny when permissions missing');
+      assert(result.missing.includes('admin'), 'Should list missing permissions');
+    });
+
+    test('ToolDispatcher _checkPermissions - no permissions required', () => {
+      const dispatcher = new ToolDispatcher();
+
+      const tool = { permissions: [] };
+      const context = { permissions: [] };
+
+      const result = dispatcher._checkPermissions(tool, context);
+      assert(result.granted, 'Should grant when no permissions required');
+    });
+
+    // Run tests
+    async function runTests() {
+      const resultsDiv = document.getElementById('test-results');
+
+      for (const test of tests) {
+        try {
+          await test.fn();
+          passed++;
+          resultsDiv.innerHTML += `
+            <div class="bg-green-50 border-l-4 border-green-400 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+              </svg>
+                </div>
+                <div class="ml-3">
+                  <p class="text-sm text-green-700">✓ ${test.name}</p>
+                </div>
+              </div>
+            </div>
+          `;
+        } catch (error) {
+          failed++;
+          resultsDiv.innerHTML += `
+            <div class="bg-red-50 border-l-4 border-red-400 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+              </svg>
+                </div>
+                <div class="ml-3">
+                  <p class="text-sm text-red-700">✗ ${test.name}</p>
+                  <p class="text-sm text-red-600 mt-1">${error.message}</p>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      // Show final results
+      const statusDiv = document.getElementById('test-status');
+      const statusContent = document.getElementById('status-content');
+      const statusBadge = document.getElementById('status-badge');
+      const totalCount = document.getElementById('total-count');
+      const passCount = document.getElementById('pass-count');
+      const failCount = document.getElementById('fail-count');
+
+      statusDiv.classList.remove('hidden');
+      totalCount.textContent = passed + failed;
+      passCount.textContent = passed;
+      failCount.textContent = failed;
+      statusBadge.textContent = failed === 0 ? 'All Tests Passed' : 'Some Tests Failed';
+      statusBadge.className = failed === 0 ? 
+        'px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800' : 
+        'px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800';
+
+      statusContent.innerHTML = `
+        <div class="grid grid-cols-3 gap-4 mb-4">
+          <div class="text-center">
+            <div class="text-2xl font-bold text-green-600">${passed}</div>
+            <div class="text-sm text-gray-600">Passed</div>
+          </div>
+          <div class="text-center">
+            <div class="text-2xl font-bold text-red-600">${failed}</div>
+            <div class="text-sm text-gray-600">Failed</div>
+          </div>
+          <div class="text-center">
+            <div class="text-2xl font-bold text-blue-600">${passed + failed}</div>
+            <div class="text-sm text-gray-600">Total</div>
+          </div>
+        </div>
+        ${failed === 0 ?
+          '<div class="bg-green-50 border-l-4 border-green-400 p-4"><p class="text-green-700">All tests passed! ✅</p></div>' :
+          '<div class="bg-red-50 border-l-4 border-red-400 p-4"><p class="text-red-700">Some tests failed. Please review the errors above.</p></div>'
+        }
+      `;
+    }
+
+    // Run tests when page loads
+    runTests().catch(error => {
+      console.error('Test runner failed:', error);
+      document.getElementById('test-results').innerHTML += `
+        <div class="bg-red-50 border-l-4 border-red-400 p-4">
+          <p class="text-red-700">Test runner failed: ${error.message}</p>
+        </div>
+      `;
+    });
+  </script>
+</body>
+</html>

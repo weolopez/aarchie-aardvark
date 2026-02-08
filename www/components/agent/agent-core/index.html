@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Core - Interactive Demo</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <div class="max-w-6xl mx-auto p-6">
+    <header class="mb-8">
+       <h1 class="text-3xl font-bold text-gray-800 mb-2">Agent Core - Interactive Demo</h1>
+       <p class="text-gray-600">Experience the AI coding assistant with Gemini API and tool execution capabilities</p>
+     </header>
+
+    <!-- Configuration Section -->
+    <div id="config-section" class="bg-white rounded-lg shadow-md p-6 mb-6 hidden">
+       <h2 class="text-xl font-semibold text-gray-800 mb-4">Configuration</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+         <div>
+           <label class="block text-sm font-medium text-gray-700 mb-1">Gemini API Key</label>
+           <input type="password" id="api-key" placeholder="AIza..." class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+         </div>
+         <div>
+           <label class="block text-sm font-medium text-gray-700 mb-1">Model</label>
+           <select id="model" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+             <option value="gemini-3-flash-preview">Gemini 3 Flash Preview</option>
+             <option value="gemini-pro-latest">Gemini Pro Latest</option>
+             <option value="gemini-flash-latest">Gemini Flash Latest</option>
+           </select>
+         </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Temperature</label>
+          <input type="number" id="temperature" value="0.7" min="0" max="2" step="0.1" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Max Tokens</label>
+          <input type="number" id="max-tokens" value="4096" min="1" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+      </div>
+      <div class="mt-4">
+        <button id="init-agent" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+          Initialize Agent
+        </button>
+        <span id="init-status" class="ml-4 text-sm text-gray-600"></span>
+      </div>
+    </div>
+
+    <!-- Chat Interface -->
+    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+      <h2 class="text-xl font-semibold text-gray-800 mb-4">Chat Interface</h2>
+
+      <!-- Messages -->
+      <div id="messages" class="space-y-4 mb-4 max-h-96 overflow-y-auto border border-gray-200 rounded-md p-4 bg-gray-50">
+        <div class="text-center text-gray-500 text-sm">
+          Initialize the agent and start chatting...
+        </div>
+      </div>
+
+      <!-- Input -->
+      <div class="flex space-x-2">
+        <input type="text" id="message-input" placeholder="Ask the AI assistant..." class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" disabled>
+        <button id="send-message" class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500" disabled>
+          Send
+        </button>
+      </div>
+    </div>
+
+    <!-- Tool Execution Demo -->
+    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+      <h2 class="text-xl font-semibold text-gray-800 mb-4">Tool Execution Demo</h2>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <h3 class="text-lg font-medium text-gray-800 mb-2">Available Tools</h3>
+          <div id="available-tools" class="space-y-2">
+            <div class="text-sm text-gray-500">Initialize agent to see available tools...</div>
+          </div>
+        </div>
+
+        <div>
+          <h3 class="text-lg font-medium text-gray-800 mb-2">Execute Tool</h3>
+          <div class="space-y-2">
+            <select id="tool-select" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" disabled>
+              <option value="">Select a tool...</option>
+            </select>
+            <div id="tool-params" class="space-y-2"></div>
+            <button id="execute-tool" class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500" disabled>
+              Execute Tool
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tool Results -->
+      <div id="tool-results" class="mt-4 p-4 bg-gray-50 rounded-md hidden">
+        <h4 class="font-medium text-gray-800 mb-2">Execution Result</h4>
+        <pre id="tool-result-content" class="text-sm text-gray-700 whitespace-pre-wrap"></pre>
+      </div>
+    </div>
+
+    <!-- Status and Logs -->
+    <div class="bg-white rounded-lg shadow-md p-6">
+      <h2 class="text-xl font-semibold text-gray-800 mb-4">Status & Logs</h2>
+      <div id="logs" class="space-y-2 max-h-48 overflow-y-auto font-mono text-sm bg-gray-900 text-green-400 p-4 rounded-md">
+        <div>Agent Core Demo initialized...</div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { AgentCore } from '/components/agent/agent-core/src/agent-core.js';
+    import { AgentConfig } from '/components/agent/agent-core/src/config.js';
+    import { ToolDispatcher } from '/components/agent/agent-core/src/tool-dispatcher.js';
+
+    let agent = null;
+    let toolDispatcher = null;
+
+    // DOM elements
+    const apiKeyInput = document.getElementById('api-key');
+    const modelSelect = document.getElementById('model');
+    const temperatureInput = document.getElementById('temperature');
+    const maxTokensInput = document.getElementById('max-tokens');
+    const initButton = document.getElementById('init-agent');
+    const initStatus = document.getElementById('init-status');
+    const messagesDiv = document.getElementById('messages');
+    const messageInput = document.getElementById('message-input');
+    const sendButton = document.getElementById('send-message');
+    const availableToolsDiv = document.getElementById('available-tools');
+    const toolSelect = document.getElementById('tool-select');
+    const toolParamsDiv = document.getElementById('tool-params');
+    const executeToolButton = document.getElementById('execute-tool');
+    const toolResultsDiv = document.getElementById('tool-results');
+    const toolResultContent = document.getElementById('tool-result-content');
+    const logsDiv = document.getElementById('logs');
+
+    function log(message, type = 'info') {
+      const timestamp = new Date().toLocaleTimeString();
+      const colorClass = type === 'error' ? 'text-red-400' : type === 'success' ? 'text-green-400' : 'text-blue-400';
+      logsDiv.innerHTML += `<div class="${colorClass}">[${timestamp}] ${message}</div>`;
+      logsDiv.scrollTop = logsDiv.scrollHeight;
+    }
+
+    function addMessage(content, role = 'user') {
+      const messageDiv = document.createElement('div');
+      messageDiv.className = `p-3 rounded-lg ${role === 'user' ? 'bg-blue-100 ml-12' : 'bg-gray-100 mr-12'}`;
+      messageDiv.innerHTML = `<div class="font-medium text-sm text-gray-600 mb-1">${role === 'user' ? 'You' : 'Agent'}</div><div>${content}</div>`;
+      messagesDiv.appendChild(messageDiv);
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    // Initialize agent
+    initButton.addEventListener('click', async () => {
+      const apiKey = apiKeyInput.value.trim();
+      if (!apiKey) {
+        initStatus.textContent = 'Please enter an API key';
+        initStatus.className = 'ml-4 text-sm text-red-600';
+        return;
+      }
+
+      // Save API key to localStorage
+      localStorage.setItem('GEMINI_API_KEY', apiKey);
+
+      try {
+        initStatus.textContent = 'Initializing...';
+        initStatus.className = 'ml-4 text-sm text-blue-600';
+
+        const config = new AgentConfig({
+          apiKey: apiKey,
+          model: modelSelect.value,
+          temperature: parseFloat(temperatureInput.value),
+          maxTokens: parseInt(maxTokensInput.value)
+        });
+
+        agent = new AgentCore();
+        await agent.init(config);
+
+        toolDispatcher = new ToolDispatcher();
+
+        // Update UI
+        initStatus.textContent = 'Agent initialized successfully!';
+        initStatus.className = 'ml-4 text-sm text-green-600';
+        messageInput.disabled = false;
+        sendButton.disabled = false;
+        toolSelect.disabled = false;
+        executeToolButton.disabled = false;
+
+        // Hide config section after initialization
+        document.getElementById('config-section').classList.add('hidden');
+
+        // Load available tools
+        updateAvailableTools();
+
+        log('Agent initialized successfully', 'success');
+        addMessage('Agent is ready! How can I help you with coding tasks?', 'assistant');
+
+      } catch (error) {
+        initStatus.textContent = `Initialization failed: ${error.message}`;
+        initStatus.className = 'ml-4 text-sm text-red-600';
+        log(`Initialization failed: ${error.message}`, 'error');
+        // Show config section on error so they can fix it
+        document.getElementById('config-section').classList.remove('hidden');
+      }
+    });
+
+    function updateAvailableTools() {
+      if (!toolDispatcher) return;
+
+      const tools = toolDispatcher.getAvailableTools();
+      availableToolsDiv.innerHTML = '';
+
+      if (tools.length === 0) {
+        availableToolsDiv.innerHTML = '<div class="text-sm text-gray-500">No tools available</div>';
+        return;
+      }
+
+      tools.forEach(tool => {
+        const toolDiv = document.createElement('div');
+        toolDiv.className = 'p-2 bg-gray-50 rounded border';
+        toolDiv.innerHTML = `
+          <div class="font-medium text-sm">${tool.name}</div>
+          <div class="text-xs text-gray-600">${tool.description}</div>
+          <div class="text-xs text-gray-500">Permissions: ${tool.permissions.join(', ')}</div>
+        `;
+        availableToolsDiv.appendChild(toolDiv);
+      });
+
+      // Update tool select
+      toolSelect.innerHTML = '<option value="">Select a tool...</option>';
+      tools.forEach(tool => {
+        const option = document.createElement('option');
+        option.value = tool.name;
+        option.textContent = tool.name;
+        toolSelect.appendChild(option);
+      });
+    }
+
+    // Send message
+    async function sendMessage() {
+      const content = messageInput.value.trim();
+      if (!content || !agent) return;
+
+      addMessage(content, 'user');
+      messageInput.value = '';
+      sendButton.disabled = true;
+
+      try {
+        log('Sending message to agent...');
+        const result = await agent.chat([{ role: 'user', content }]);
+
+        if (result.success) {
+          addMessage(result.response.content, 'assistant');
+          log('Message processed successfully', 'success');
+        } else {
+          addMessage(`Error: ${result.error}`, 'assistant');
+          log(`Message failed: ${result.error}`, 'error');
+        }
+      } catch (error) {
+        addMessage(`Error: ${error.message}`, 'assistant');
+        log(`Message error: ${error.message}`, 'error');
+      } finally {
+        sendButton.disabled = false;
+      }
+    }
+
+    sendButton.addEventListener('click', sendMessage);
+    messageInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') sendMessage();
+    });
+
+    // Tool execution
+    toolSelect.addEventListener('change', () => {
+      const toolName = toolSelect.value;
+      if (!toolName || !toolDispatcher) return;
+
+      const tools = toolDispatcher.getAvailableTools();
+      const tool = tools.find(t => t.name === toolName);
+
+      if (!tool) return;
+
+      toolParamsDiv.innerHTML = '';
+
+      if (tool.parameters && tool.parameters.properties) {
+        Object.entries(tool.parameters.properties).forEach(([paramName, paramDef]) => {
+          const paramDiv = document.createElement('div');
+          paramDiv.innerHTML = `
+            <label class="block text-sm font-medium text-gray-700 mb-1">${paramName}</label>
+            <input type="text" data-param="${paramName}" placeholder="${paramDef.description || paramName}" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+          `;
+          toolParamsDiv.appendChild(paramDiv);
+        });
+      }
+    });
+
+    executeToolButton.addEventListener('click', async () => {
+      const toolName = toolSelect.value;
+      if (!toolName || !toolDispatcher) return;
+
+      const params = {};
+      toolParamsDiv.querySelectorAll('input[data-param]').forEach(input => {
+        params[input.dataset.param] = input.value;
+      });
+
+      try {
+        log(`Executing tool: ${toolName}`);
+        executeToolButton.disabled = true;
+
+        const result = await toolDispatcher.execute(toolName, params, { permissions: ['fs', 'network', 'ui'] });
+
+        toolResultsDiv.classList.remove('hidden');
+        if (result.success) {
+          toolResultContent.textContent = `Success: ${result.output}`;
+          toolResultContent.className = 'text-sm text-green-700';
+          log(`Tool executed successfully`, 'success');
+        } else {
+          toolResultContent.textContent = `Error: ${result.error}`;
+          toolResultContent.className = 'text-sm text-red-700';
+          log(`Tool execution failed: ${result.error}`, 'error');
+        }
+      } catch (error) {
+        toolResultsDiv.classList.remove('hidden');
+        toolResultContent.textContent = `Error: ${error.message}`;
+        toolResultContent.className = 'text-sm text-red-700';
+        log(`Tool execution error: ${error.message}`, 'error');
+      } finally {
+        executeToolButton.disabled = false;
+      }
+    });
+
+    // Initialize with demo config if API key is provided
+    const urlParams = new URLSearchParams(window.location.search);
+    const demoApiKey = urlParams.get('api_key') || localStorage.getItem('GEMINI_API_KEY');
+    
+    if (demoApiKey) {
+      apiKeyInput.value = demoApiKey;
+      // Auto-initialize if API key is available
+      setTimeout(() => {
+        initButton.click();
+      }, 100);
+      log('API key found, auto-initializing agent...');
+    } else {
+      // Show configuration section if no API key
+      document.getElementById('config-section').classList.remove('hidden');
+      log('No API key found, showing configuration');
+    }
+  </script>
+</body>
+</html>
