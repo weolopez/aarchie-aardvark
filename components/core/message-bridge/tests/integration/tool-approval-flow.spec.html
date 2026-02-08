@@ -80,7 +80,8 @@
       setTimeout(() => {
         console.log('[Worker] Sending TOOL_PENDING');
         eventBus.publish(SystemEvents.TOOL_PENDING, {
-          toolName: 'generated-tool',
+          name: 'generated-tool',
+          toolId: 'test-id-1',
           code: 'function test() {}'
         });
       }, 500);
@@ -119,7 +120,7 @@
             // Listen for Worker -> Main events
             eventBus.subscribe(SystemEvents.TOOL_PENDING, (data) => {
               log('Received TOOL_PENDING from worker');
-              if (data.toolName === 'generated-tool') {
+              if (data.name === 'generated-tool') {
                 receivedEvents.add(SystemEvents.TOOL_PENDING);
                 
                 // Simulate approval

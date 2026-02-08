@@ -15,11 +15,28 @@ import { SearchOperations } from './search.js';
  */
 
 /**
+ * @typedef {Object} ToolCall
+ * @property {string} id - Call ID (from LLM)
+ * @property {string} toolId - ID of the tool definition (UUID)
+ * @property {string} name - Name of the tool
+ * @property {Object} arguments
+ */
+
+/**
+ * @typedef {Object} ToolResult
+ * @property {string} callId - Links to ToolCall.id
+ * @property {string} toolId - ID of the tool definition (UUID)
+ * @property {boolean} success
+ * @property {string} [output]
+ * @property {string} [error]
+ */
+
+/**
  * @typedef {Object} NodeData
  * @property {'user'|'assistant'|'system'} role
  * @property {string} content
- * @property {Array} [toolCalls]
- * @property {Array} [toolResults]
+ * @property {ToolCall[]} [toolCalls]
+ * @property {ToolResult[]} [toolResults]
  * @property {Object} [metadata]
  */
 

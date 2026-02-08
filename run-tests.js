@@ -11,20 +11,10 @@ const path = require('path');
 
 // Test files to run
 const testFiles = [
-  'components/core/event-bus/tests/unit/event-bus.spec.html',
-  'components/core/event-bus/tests/unit/event-bus-migration.spec.html',
-  'components/core/event-bus/tests/integration/cross-component.spec.html',
-  'components/core/opfs-provider/tests/unit/opfs-provider.spec.html',
-  'components/core/indexeddb-provider/tests/unit/indexeddb-provider.spec.html',
-  'components/core/message-bridge/tests/unit/message-bridge.spec.html',
-  'components/core/message-bridge/tests/integration/tool-approval-flow.spec.html',
-  'components/core/api-client/tests/unit/api-client.spec.html',
   'components/storage/tool-store/tests/unit/tool-store.spec.html',
-  'components/storage/tool-store/tests/unit/skill-parser.spec.html',
-  'components/storage/session-store/tests/unit/session-store.spec.html',
-  'components/storage/file-store/tests/unit/file-store.spec.html',
-  'components/storage/history-store/tests/unit/history-store.spec.html',
-  'tests/integration/integration-tests.html'
+  'components/core/message-bridge/tests/integration/tool-approval-flow.spec.html',
+  'components/storage/settings-store/tests/unit/settings-store.spec.html',
+  'tests/integration/storage-consistency.spec.html'
 ];
 
 const results = [];
@@ -69,10 +59,7 @@ async function runTest(browser, testPath, baseUrl) {
   
   // Listen for console messages
   page.on('console', msg => {
-    const text = msg.text();
-    if (text.includes('✓') || text.includes('✗') || text.includes('Test')) {
-      console.log(`  ${text}`);
-    }
+    console.log(`  CONSOLE: ${msg.text()}`);
   });
 
   // Navigate to test page

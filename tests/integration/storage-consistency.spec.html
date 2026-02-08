@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Storage Consistency Integration Test</title>
+</head>
+<body>
+    <div id="test-results"></div>
+
+    <script type="module">
+        import { EventBus } from '../../components/core/event-bus/src/index.js';
+        import { IndexedDBProvider } from '../../components/core/indexeddb-provider/src/index.js';
+        
+        // Import all storage components
+        import { ToolStore } from '../../components/storage/tool-store/src/index.js';
+        import { HistoryStore } from '../../components/storage/history-store/src/index.js';
+        import { SessionStore } from '../../components/storage/session-store/src/index.js';
+        import { SettingsStore } from '../../components/storage/settings-store/src/index.js';
+
+        // Mock DB for tests to avoid polluting real DBs
+        // We will use unique DB names for the test run
+        const TEST_ID = Date.now();
+        const DB_TOOLS = `test-tools-${TEST_ID}`;
+        const DB_HISTORY = `test-history-${TEST_ID}`;
+        const DB_SESSIONS = `test-sessions-${TEST_ID}`;
+        const DB_SETTINGS = `test-settings-${TEST_ID}`;
+
+        class TestRunner {
+            constructor() {
+                this.tests = [];
+                this.passCount = 0;
+                this.failCount = 0;
+            }
+
+            test(name, fn) {
+                this.tests.push({ name, fn });
+            }
+
+            async runAll() {
+                const container = document.getElementById('test-results');
+                
+                for (const test of this.tests) {
+                    const el = document.createElement('div');
+                    container.appendChild(el);
+                    try {
+                        await test.fn();
+                        this.passCount++;
+                        el.style.color = 'green';
+                        el.textContent = `✓ ${test.name}`;
+                    } catch (error) {
+                        this.failCount++;
+                        el.style.color = 'red';
+                        el.textContent = `✗ ${test.name}: ${error.message}`;
+                        console.error(error);
+                    }
+                }
+                this.showSummary();
+            }
+
+            showSummary() {
+                const badge = document.createElement('div');
+                badge.id = 'status-badge';
+                badge.style.display = 'none';
+                badge.textContent = this.failCount === 0 ? 'All Tests Passed!' : 'Tests Failed';
+                document.body.appendChild(badge);
+                
+                const total = document.createElement('div'); total.id = 'total-count'; total.textContent = this.tests.length;
+                const pass = document.createElement('div'); pass.id = 'pass-count'; pass.textContent = this.passCount;
+                const fail = document.createElement('div'); fail.id = 'fail-count'; fail.textContent = this.failCount;
+                document.body.append(total, pass, fail);
+            }
+        }
+
+        const runner = new TestRunner();
+
+        runner.test('Storage Consistency Flow', async () => {
+            // 1. Setup
+            const eventBus = new EventBus();
+            
+            const toolStore = new ToolStore({ 
+                eventBus, 
+                db: new IndexedDBProvider(DB_TOOLS) 
+            });
+            
+            const historyStore = new HistoryStore({ 
+                eventBus, 
+                db: new IndexedDBProvider(DB_HISTORY) 
+            });
+            
+            const sessionStore = new SessionStore({ 
+                eventBus, 
+                db: new IndexedDBProvider(DB_SESSIONS) 
+            });
+
+            const settingsStore = new SettingsStore({
+                eventBus,
+                db: new IndexedDBProvider(DB_SETTINGS)
+            });
+
+            await toolStore.initialize();
+            await historyStore.initialize();
+            await sessionStore.initialize();
+            await settingsStore.initialize();
+            
+            // 2. Create a Tool (The "Source of Truth")
+            const toolDefinition = {
+                name: 'test_tool',
+                version: '1.0.0',
+                func: '() => "hello"',
+                schema: { description: 'A test tool' },
+                type: 'user',
+                permissions: []
+            };
+
+            // Manually register for speed (skipping approval workflow for this test)
+            await toolStore.registerTool(toolDefinition);
+            
+            // Get the generated ID
+            const tool = toolStore.getTool('test_tool');
+            if (!tool || !tool.id) throw new Error('Tool creation failed or missing ID');
+            
+            // 3. Create a Session
+            const sessionId = await sessionStore.createSession({ name: 'Integration Test' });
+
+            // 4. Record Execution Start (History)
+            const nodeId = 'node-1'; // Mock node ID
+            const executionId = await historyStore.recordStart(
+                sessionId, 
+                nodeId, 
+                tool.id, // PASSING TOOL ID
+                tool.name, 
+                { arg: 1 }
+            );
+
+            // 5. Verify History Record has Tool ID
+            const execRecord = await historyStore.getExecution(executionId);
+            if (execRecord.toolId !== tool.id) {
+                throw new Error(`History record missing correct toolId. Expected ${tool.id}, got ${execRecord.toolId}`);
+            }
+
+            // 6. Complete Execution
+            await historyStore.recordComplete(executionId, { success: true, output: 'hello' });
+
+            // 7. Update Session with Tool Call (Session)
+            // Simulating what the Agent would do: add a node with tool calls referencing the ID
+            const toolCallNodeId = await sessionStore.addNode(sessionId, null, {
+                role: 'assistant',
+                content: 'Calling tool...',
+                toolCalls: [{
+                    id: 'call-1',
+                    toolId: tool.id, // LINKING BY ID
+                    name: tool.name,
+                    arguments: { arg: 1 }
+                }]
+            });
+
+            // 8. Verify Session Node has Tool ID
+            const node = await sessionStore.getNode(sessionId, toolCallNodeId);
+            if (node.toolCalls[0].toolId !== tool.id) {
+                throw new Error('Session node missing correct toolId');
+            }
+
+            // 9. Settings Store Verification
+            await settingsStore.set('system.last_tool_run', tool.id);
+            const settingVal = await settingsStore.get('system.last_tool_run');
+            if (settingVal !== tool.id) throw new Error('Settings store failed to save tool ID');
+        });
+
+        runner.runAll();
+    </script>
+</body>
+</html>

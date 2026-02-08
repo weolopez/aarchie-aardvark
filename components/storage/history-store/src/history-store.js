@@ -11,6 +11,7 @@ import { IndexedDBProvider } from '../../../core/indexeddb-provider/src/index.js
  * @property {string} executionId - Unique execution ID
  * @property {string} sessionId - Session ID
  * @property {string} nodeId - Node ID in session tree
+ * @property {string} toolId - ID of tool executed
  * @property {string} toolName - Name of tool executed
  * @property {Object} arguments - Tool arguments
  * @property {ToolResult} result - Execution result
@@ -31,6 +32,7 @@ import { IndexedDBProvider } from '../../../core/indexeddb-provider/src/index.js
  * @typedef {Object} ExecutionRecordInput
  * @property {string} sessionId
  * @property {string} nodeId
+ * @property {string} toolId
  * @property {string} toolName
  * @property {Object} arguments
  * @property {ToolResult} result
@@ -153,6 +155,7 @@ export class HistoryStore {
       executionId,
       sessionId: record.sessionId,
       nodeId: record.nodeId,
+      toolId: record.toolId,
       toolName: record.toolName,
       arguments: record.arguments,
       result: record.result,
@@ -169,6 +172,7 @@ export class HistoryStore {
     this.eventBus.publish(eventType, {
       executionId,
       sessionId: record.sessionId,
+      toolId: record.toolId,
       toolName: record.toolName,
       duration,
       status: record.result.success ? 'success' : 'failure',
@@ -182,17 +186,19 @@ export class HistoryStore {
    * Record the start of an execution
    * @param {string} sessionId - Session ID
    * @param {string} nodeId - Node ID
+   * @param {string} toolId - Tool ID
    * @param {string} toolName - Tool name
    * @param {Object} args - Tool arguments
    * @returns {Promise<string>} executionId
    */
-  async recordStart(sessionId, nodeId, toolName, args) {
+  async recordStart(sessionId, nodeId, toolId, toolName, args) {
     const executionId = crypto.randomUUID();
     
     const record = {
       executionId,
       sessionId,
       nodeId,
+      toolId,
       toolName,
       arguments: args,
       result: null,
@@ -207,6 +213,7 @@ export class HistoryStore {
       executionId,
       sessionId,
       nodeId,
+      toolId,
       toolName,
       arguments: args
     });
@@ -241,6 +248,7 @@ export class HistoryStore {
     this.eventBus.publish(eventType, {
       executionId,
       sessionId: record.sessionId,
+      toolId: record.toolId,
       toolName: record.toolName,
       duration,
       status: result.success ? 'success' : 'failure',

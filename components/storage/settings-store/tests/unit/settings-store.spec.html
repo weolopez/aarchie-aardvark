@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Settings Store Unit Tests</title>
+</head>
+<body>
+    <div id="test-results"></div>
+
+    <script type="module">
+        import { SettingsStore } from '../src/index.js';
+        import { EventBus } from '../../../../core/event-bus/src/index.js';
+        import { IndexedDBProvider } from '../../../../core/indexeddb-provider/src/index.js';
+
+        // Mock dependencies
+        class MockDB {
+            constructor() { this.store = new Map(); }
+            async initialize() {}
+            async get(store, key) { return this.store.get(key); }
+            async put(store, item) { this.store.set(item.key, item); }
+            async delete(store, key) { this.store.delete(key); }
+            async getAll(store) { return Array.from(this.store.values()); }
+        }
+
+        class TestRunner {
+            constructor() {
+                this.tests = [];
+                this.passCount = 0;
+                this.failCount = 0;
+            }
+
+            test(name, fn) {
+                this.tests.push({ name, fn });
+            }
+
+            async runAll() {
+                const container = document.getElementById('test-results');
+                
+                for (const test of this.tests) {
+                    const el = document.createElement('div');
+                    container.appendChild(el);
+                    try {
+                        await test.fn();
+                        this.passCount++;
+                        el.style.color = 'green';
+                        el.textContent = `✓ ${test.name}`;
+                    } catch (error) {
+                        this.failCount++;
+                        el.style.color = 'red';
+                        el.textContent = `✗ ${test.name}: ${error.message}`;
+                        console.error(error);
+                    }
+                }
+                this.showSummary();
+            }
+
+            showSummary() {
+                const badge = document.createElement('div');
+                badge.id = 'status-badge';
+                badge.style.display = 'none';
+                badge.textContent = this.failCount === 0 ? 'All Tests Passed!' : 'Tests Failed';
+                document.body.appendChild(badge);
+                
+                const total = document.createElement('div'); total.id = 'total-count'; total.textContent = this.tests.length;
+                const pass = document.createElement('div'); pass.id = 'pass-count'; pass.textContent = this.passCount;
+                const fail = document.createElement('div'); fail.id = 'fail-count'; fail.textContent = this.failCount;
+                document.body.append(total, pass, fail);
+            }
+        }
+
+        const runner = new TestRunner();
+        const mockDB = new MockDB();
+        const bus = new EventBus();
+        const store = new SettingsStore({ db: mockDB, eventBus: bus });
+
+        runner.test('Initialize', async () => {
+            await store.initialize();
+        });
+
+        runner.test('Set and Get', async () => {
+            await store.set('theme', 'dark');
+            const val = await store.get('theme');
+            if (val !== 'dark') throw new Error(`Expected dark, got ${val}`);
+        });
+
+        runner.test('Default Value', async () => {
+            const val = await store.get('nonexistent', 'default');
+            if (val !== 'default') throw new Error(`Expected default, got ${val}`);
+        });
+
+        runner.test('Section Operations', async () => {
+            await store.setSection('llm', { model: 'gpt-4', temperature: 0.7 });
+            const section = await store.getSection('llm');
+            if (section.model !== 'gpt-4') throw new Error('Failed to retrieve model');
+            if (section.temperature !== 0.7) throw new Error('Failed to retrieve temperature');
+        });
+
+        runner.test('Events', async () => {
+            let eventFired = false;
+            bus.subscribe('setting:changed', (data) => {
+                if (data.key === 'test.event' && data.value === 123) eventFired = true;
+            });
+            await store.set('test.event', 123);
+            if (!eventFired) throw new Error('Event did not fire');
+        });
+
+        runner.runAll();
+    </script>
+</body>
+</html>

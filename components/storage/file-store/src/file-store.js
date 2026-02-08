@@ -1,5 +1,5 @@
 /**
- * FileStore - Repository file management on top of OPFS Provider
+ * FileStore (aliased as RepoStore) - Repository file management on top of OPFS Provider
  * 
  * Provides high-level file operations with:
  * - Repository namespacing
