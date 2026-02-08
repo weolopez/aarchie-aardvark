@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Tool Registry Persistence Integration Test</title>
+</head>
+<body>
+    <div id="test-results"></div>
+
+    <script type="module">
+        import ToolRegistry from '../../src/index.js';
+
+        class TestRunner {
+            constructor() {
+                this.tests = [];
+                this.passCount = 0;
+                this.failCount = 0;
+            }
+
+            test(name, fn) {
+                this.tests.push({ name, fn });
+            }
+
+            async runAll() {
+                const container = document.getElementById('test-results');
+
+                for (const test of this.tests) {
+                    const el = document.createElement('div');
+                    container.appendChild(el);
+                    try {
+                        await test.fn();
+                        this.passCount++;
+                        el.style.color = 'green';
+                        el.textContent = `✓ ${test.name}`;
+                    } catch (error) {
+                        this.failCount++;
+                        el.style.color = 'red';
+                        el.textContent = `✗ ${test.name}: ${error.message}`;
+                        console.error(error);
+                    }
+                }
+
+                const summary = document.createElement('div');
+                summary.style.fontWeight = 'bold';
+                summary.style.marginTop = '20px';
+                summary.textContent = `Tests completed: ${this.passCount} passed, ${this.failCount} failed`;
+                container.appendChild(summary);
+                
+                // Add status badge for test runner
+                const badge = document.createElement('div');
+                badge.id = 'status-badge';
+                badge.style.display = 'none';
+                badge.textContent = this.failCount === 0 ? 'All Tests Passed!' : 'Tests Failed';
+                document.body.appendChild(badge);
+                
+                const total = document.createElement('div'); total.id = 'total-count'; total.textContent = this.tests.length;
+                const pass = document.createElement('div'); pass.id = 'pass-count'; pass.textContent = this.passCount;
+                const fail = document.createElement('div'); fail.id = 'fail-count'; fail.textContent = this.failCount;
+                document.body.append(total, pass, fail);
+            }
+        }
+
+        const runner = new TestRunner();
+
+        runner.test('Load from empty registry', async () => {
+            const registry = new ToolRegistry();
+            await registry.load();
+            expect(registry.list()).toHaveLength(0);
+        });
+
+        runner.test('Register and persist tool', async () => {
+            const registry = new ToolRegistry();
+
+            const tool = {
+                id: 'test-id',
+                name: 'test_tool',
+                version: 1,
+                func: 'async () => "test"',
+                schema: { type: 'object', properties: {} },
+                type: 'system',
+                permissions: [],
+                created: new Date().toISOString()
+            };
+
+            registry.register(tool);
+            await registry.save();
+
+            // In real implementation, this would load from IndexedDB
+            // For now, just check it's in memory
+            expect(registry.get('test_tool')).toEqual(tool);
+        });
+
+        runner.test('Load with existing tools', async () => {
+            // This test will be meaningful once Global Store integration is complete
+            const registry = new ToolRegistry();
+            await registry.load();
+            // For now, expect empty
+            expect(registry.list()).toHaveLength(0);
+        });
+
+        // Simple expect function for tests
+        function expect(actual) {
+            return {
+                toBe(expected) {
+                    if (actual !== expected) {
+                        throw new Error(`Expected ${expected}, got ${actual}`);
+                    }
+                },
+                toEqual(expected) {
+                    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+                        throw new Error(`Expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+                    }
+                },
+                toHaveLength(expected) {
+                    if (actual.length !== expected) {
+                        throw new Error(`Expected length ${expected}, got ${actual.length}`);
+                    }
+                }
+            };
+        }
+
+        // Run tests when page loads
+        window.addEventListener('load', () => {
+            runner.runAll();
+        });
+    </script>
+</body>
+</html>

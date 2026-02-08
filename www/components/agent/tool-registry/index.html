@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aardvark - Tool Registry Demo</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; }
+    .tool-card {
+      transition: all 0.3s ease;
+    }
+    .tool-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+    }
+    .log-entry {
+      animation: slideIn 0.3s ease-out;
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateX(-10px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    .json-display {
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+      font-size: 12px;
+      background: #f8f9fa;
+      border-radius: 4px;
+      padding: 8px;
+    }
+  </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <div class="max-w-7xl mx-auto p-6">
+    <!-- Header -->
+    <header class="mb-8">
+      <h1 class="text-4xl font-bold text-gray-800 mb-2">Aardvark Tool Registry</h1>
+      <p class="text-gray-600">In-memory tool management system with IndexedDB persistence</p>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+      <!-- Left Column: Tool Management -->
+      <div class="lg:col-span-1 space-y-6">
+
+        <!-- Register Tool -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <h2 class="text-xl font-semibold text-gray-800 mb-4">Register Tool</h2>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Tool Name</label>
+              <input type="text" id="tool-name" placeholder="hello_world"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Function Code</label>
+              <textarea id="tool-code" rows="4" placeholder="async () => { return 'Hello, World!'; }"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"></textarea>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Permissions</label>
+              <div class="flex flex-wrap gap-2">
+                <label class="flex items-center">
+                  <input type="checkbox" value="fs" class="mr-1"> File System
+                </label>
+                <label class="flex items-center">
+                  <input type="checkbox" value="network" class="mr-1"> Network
+                </label>
+                <label class="flex items-center">
+                  <input type="checkbox" value="ui" class="mr-1"> UI
+                </label>
+              </div>
+            </div>
+            <button id="btn-register"
+              class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition">
+              Register Tool
+            </button>
+          </div>
+        </div>
+
+        <!-- Built-in Tools -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <h2 class="text-xl font-semibold text-gray-800 mb-4">Built-in Tools</h2>
+          <div class="space-y-2">
+            <button class="quick-register w-full text-left p-3 bg-gray-50 hover:bg-gray-100 rounded border"
+                    data-name="js" data-code="async ({ code }) => { return eval(code); }" data-perms="js,fs,network,ui">
+              <div class="font-medium">js</div>
+              <div class="text-sm text-gray-600">Execute JavaScript code</div>
+            </button>
+            <button class="quick-register w-full text-left p-3 bg-gray-50 hover:bg-gray-100 rounded border"
+                    data-name="calculator" data-code="async ({ expression }) => { return eval(expression); }" data-perms="">
+              <div class="font-medium">calculator</div>
+              <div class="text-sm text-gray-600">Evaluate mathematical expressions</div>
+            </button>
+            <button class="quick-register w-full text-left p-3 bg-gray-50 hover:bg-gray-100 rounded border"
+                    data-name="text_format" data-code="async ({ text, format }) => { 
+                      if (format === 'uppercase') return text.toUpperCase();
+                      if (format === 'lowercase') return text.toLowerCase();
+                      if (format === 'title') return text.replace(/\w\S*/g, txt => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
+                      return text;
+                    }" data-perms="">
+              <div class="font-medium">text_format</div>
+              <div class="text-sm text-gray-600">Format text (uppercase, lowercase, title case)</div>
+            </button>
+            <button class="quick-register w-full text-left p-3 bg-gray-50 hover:bg-gray-100 rounded border"
+                    data-name="random" data-code="async ({ min = 0, max = 100 }) => { return Math.floor(Math.random() * (max - min + 1)) + min; }" data-perms="">
+              <div class="font-medium">random</div>
+              <div class="text-sm text-gray-600">Generate random numbers</div>
+            </button>
+            <button class="quick-register w-full text-left p-3 bg-gray-50 hover:bg-gray-100 rounded border"
+                    data-name="datetime" data-code="async ({ format = 'iso' }) => { 
+                      const now = new Date();
+                      if (format === 'iso') return now.toISOString();
+                      if (format === 'locale') return now.toLocaleString();
+                      if (format === 'date') return now.toLocaleDateString();
+                      if (format === 'time') return now.toLocaleTimeString();
+                      return now.getTime();
+                    }" data-perms="">
+              <div class="font-medium">datetime</div>
+              <div class="text-sm text-gray-600">Get current date and time</div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Registry Actions -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <h2 class="text-xl font-semibold text-gray-800 mb-4">Registry Actions</h2>
+          <div class="space-y-2">
+            <button id="btn-load" class="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 transition">
+              Load from Storage
+            </button>
+            <button id="btn-save" class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition">
+              Save to Storage
+            </button>
+            <button id="btn-clear" class="w-full bg-red-600 text-white py-2 px-4 rounded-md hover:bg-red-700 transition">
+              Clear Registry
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Middle Column: Tool List -->
+      <div class="lg:col-span-1 space-y-6">
+
+        <!-- Registered Tools -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-semibold text-gray-800">Registered Tools</h2>
+            <span id="tool-count" class="text-sm text-gray-500">0 tools</span>
+          </div>
+          <div id="tools-list" class="space-y-3 max-h-96 overflow-y-auto">
+            <p class="text-gray-500 text-sm italic">No tools registered</p>
+          </div>
+        </div>
+
+        <!-- Tool Details -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <h2 class="text-xl font-semibold text-gray-800 mb-4">Tool Details</h2>
+          <div id="tool-details" class="space-y-2">
+            <p class="text-gray-500 text-sm italic">Select a tool to view details</p>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right Column: Event Log & Execution -->
+      <div class="lg:col-span-1 space-y-6">
+
+        <!-- Execute Tool -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <h2 class="text-xl font-semibold text-gray-800 mb-4">Execute Tool</h2>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Tool Name</label>
+              <input type="text" id="exec-name" placeholder="calculator"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Arguments (JSON)</label>
+              <textarea id="exec-args" rows="3" placeholder='{"expression": "2 + 2 * 3"}'
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"></textarea>
+            </div>
+            <div class="space-y-2">
+              <div class="text-sm font-medium text-gray-700">Quick Examples:</div>
+              <div class="grid grid-cols-2 gap-2">
+                <button class="quick-exec p-2 text-xs bg-blue-50 hover:bg-blue-100 rounded border"
+                        data-name="calculator" data-args='{"expression": "Math.PI * 2"}'>
+                  Calculator: π × 2
+                </button>
+                <button class="quick-exec p-2 text-xs bg-green-50 hover:bg-green-100 rounded border"
+                        data-name="text_format" data-args='{"text": "hello world", "format": "title"}'>
+                  Text: Title Case
+                </button>
+                <button class="quick-exec p-2 text-xs bg-purple-50 hover:bg-purple-100 rounded border"
+                        data-name="random" data-args='{"min": 1, "max": 100}'>
+                  Random: 1-100
+                </button>
+                <button class="quick-exec p-2 text-xs bg-orange-50 hover:bg-orange-100 rounded border"
+                        data-name="datetime" data-args='{"format": "locale"}'>
+                  Current Time
+                </button>
+              </div>
+            </div>
+            <button id="btn-execute"
+              class="w-full bg-purple-600 text-white py-2 px-4 rounded-md hover:bg-purple-700 transition">
+              Execute Tool
+            </button>
+          </div>
+        </div>
+
+        <!-- Event Log -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-semibold text-gray-800">Event Log</h2>
+            <button id="btn-clear-log" class="text-sm text-red-600 hover:text-red-800">
+              Clear
+            </button>
+          </div>
+          <div id="event-log" class="space-y-2 max-h-80 overflow-y-auto text-sm">
+            <div class="log-entry text-gray-500 italic">Registry initialized</div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <script type="module">
+    import { ToolRegistry } from '../../../../components/agent/tool-registry/src/index.js';
+
+    // Initialize registry
+    const registry = new ToolRegistry();
+
+    // Auto-register default tools
+    async function registerDefaultTools() {
+      const defaultTools = [
+        {
+          id: 'tool_js_builtin',
+          name: 'js',
+          version: 1,
+          func: "async ({ code }) => { return eval(code); }",
+          schema: { type: 'object', properties: { code: { type: 'string' } } },
+          type: 'system',
+          permissions: ['fs', 'network', 'ui'],
+          created: new Date().toISOString()
+        },
+        {
+          id: 'tool_calculator_builtin',
+          name: 'calculator',
+          version: 1,
+          func: "async ({ expression }) => { return eval(expression); }",
+          schema: { type: 'object', properties: { expression: { type: 'string' } } },
+          type: 'system',
+          permissions: [],
+          created: new Date().toISOString()
+        },
+        {
+          id: 'tool_text_format_builtin',
+          name: 'text_format',
+          version: 1,
+          func: `async ({ text, format }) => { 
+            if (format === 'uppercase') return text.toUpperCase();
+            if (format === 'lowercase') return text.toLowerCase();
+            if (format === 'title') return text.replace(/\w\S*/g, txt => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
+            return text;
+          }`,
+          schema: { 
+            type: 'object', 
+            properties: { 
+              text: { type: 'string' },
+              format: { type: 'string', enum: ['uppercase', 'lowercase', 'title'] }
+            } 
+          },
+          type: 'system',
+          permissions: [],
+          created: new Date().toISOString()
+        },
+        {
+          id: 'tool_random_builtin',
+          name: 'random',
+          version: 1,
+          func: "async ({ min = 0, max = 100 }) => { return Math.floor(Math.random() * (max - min + 1)) + min; }",
+          schema: { 
+            type: 'object', 
+            properties: { 
+              min: { type: 'number', default: 0 },
+              max: { type: 'number', default: 100 }
+            } 
+          },
+          type: 'system',
+          permissions: [],
+          created: new Date().toISOString()
+        },
+        {
+          id: 'tool_datetime_builtin',
+          name: 'datetime',
+          version: 1,
+          func: `async ({ format = 'iso' }) => { 
+            const now = new Date();
+            if (format === 'iso') return now.toISOString();
+            if (format === 'locale') return now.toLocaleString();
+            if (format === 'date') return now.toLocaleDateString();
+            if (format === 'time') return now.toLocaleTimeString();
+            return now.getTime();
+          }`,
+          schema: { 
+            type: 'object', 
+            properties: { 
+              format: { type: 'string', enum: ['iso', 'locale', 'date', 'time', 'timestamp'], default: 'iso' }
+            } 
+          },
+          type: 'system',
+          permissions: [],
+          created: new Date().toISOString()
+        }
+      ];
+
+      for (const tool of defaultTools) {
+        try {
+          registry.register(tool);
+        } catch (error) {
+          logEvent(`Failed to register default tool ${tool.name}: ${error.message}`, 'error');
+        }
+      }
+    }
+
+    // DOM elements
+    const toolNameInput = document.getElementById('tool-name');
+    const toolCodeInput = document.getElementById('tool-code');
+    const permissionsCheckboxes = document.querySelectorAll('input[type="checkbox"][value]');
+    const btnRegister = document.getElementById('btn-register');
+    const btnLoad = document.getElementById('btn-load');
+    const btnSave = document.getElementById('btn-save');
+    const btnClear = document.getElementById('btn-clear');
+    const toolsList = document.getElementById('tools-list');
+    const toolCount = document.getElementById('tool-count');
+    const toolDetails = document.getElementById('tool-details');
+    const execNameInput = document.getElementById('exec-name');
+    const execArgsInput = document.getElementById('exec-args');
+    const btnExecute = document.getElementById('btn-execute');
+    const eventLog = document.getElementById('event-log');
+    const btnClearLog = document.getElementById('btn-clear-log');
+
+    // Event logging
+    function logEvent(message, type = 'info') {
+      const entry = document.createElement('div');
+      entry.className = `log-entry text-${type === 'error' ? 'red' : type === 'success' ? 'green' : 'gray'}-700`;
+      entry.textContent = `${new Date().toLocaleTimeString()}: ${message}`;
+      eventLog.appendChild(entry);
+      eventLog.scrollTop = eventLog.scrollHeight;
+    }
+
+    // Subscribe to registry events
+    registry.on('tool:registered', (tool) => {
+      logEvent(`Tool registered: ${tool.name}`, 'success');
+      updateToolsList();
+    });
+
+    registry.on('tool:unregistered', (tool) => {
+      logEvent(`Tool unregistered: ${tool.name}`, 'info');
+      updateToolsList();
+    });
+
+    registry.on('registry:loaded', () => {
+      logEvent('Registry loaded from storage', 'success');
+      updateToolsList();
+    });
+
+    registry.on('registry:persisted', () => {
+      logEvent('Registry saved to storage', 'success');
+    });
+
+    // Update tools list display
+    function updateToolsList() {
+      const tools = registry.list();
+      toolCount.textContent = `${tools.length} tool${tools.length !== 1 ? 's' : ''}`;
+
+      if (tools.length === 0) {
+        toolsList.innerHTML = '<p class="text-gray-500 text-sm italic">No tools registered</p>';
+        return;
+      }
+
+      toolsList.innerHTML = '';
+      tools.forEach(tool => {
+        const card = document.createElement('div');
+        card.className = 'tool-card bg-gray-50 p-3 rounded border cursor-pointer';
+        card.innerHTML = `
+          <div class="font-medium text-gray-900">${tool.name}</div>
+          <div class="text-xs text-gray-600 mt-1">
+            Type: ${tool.type} | Permissions: ${tool.permissions.join(', ') || 'none'}
+          </div>
+        `;
+        card.addEventListener('click', () => showToolDetails(tool));
+        toolsList.appendChild(card);
+      });
+    }
+
+    // Show tool details
+    function showToolDetails(tool) {
+      toolDetails.innerHTML = `
+        <div class="space-y-2">
+          <div><strong>Name:</strong> ${tool.name}</div>
+          <div><strong>Type:</strong> ${tool.type}</div>
+          <div><strong>Version:</strong> ${tool.version}</div>
+          <div><strong>Permissions:</strong> ${tool.permissions.join(', ') || 'none'}</div>
+          <div><strong>Created:</strong> ${new Date(tool.created).toLocaleString()}</div>
+          <div><strong>Function:</strong></div>
+          <div class="json-display mt-1">${tool.func}</div>
+          <div><strong>Schema:</strong></div>
+          <div class="json-display mt-1">${JSON.stringify(tool.schema, null, 2)}</div>
+        </div>
+      `;
+    }
+
+    // Register tool
+    btnRegister.addEventListener('click', () => {
+      const name = toolNameInput.value.trim();
+      const code = toolCodeInput.value.trim();
+      if (!name || !code) {
+        logEvent('Tool name and code are required', 'error');
+        return;
+      }
+
+      const permissions = Array.from(permissionsCheckboxes)
+        .filter(cb => cb.checked)
+        .map(cb => cb.value);
+
+      try {
+        // Create tool function from code
+        const func = code; // Store as string, will be evaluated in sandbox
+
+        const tool = {
+          id: `tool_${Date.now()}`,
+          name,
+          version: 1,
+          func,
+          schema: { type: 'object', properties: {} },
+          type: 'user',
+          permissions,
+          created: new Date().toISOString()
+        };
+
+        registry.register(tool);
+        toolNameInput.value = '';
+        toolCodeInput.value = '';
+        permissionsCheckboxes.forEach(cb => cb.checked = false);
+
+      } catch (error) {
+        logEvent(`Failed to register tool: ${error.message}`, 'error');
+      }
+    });
+
+    // Quick register built-in tools
+    document.querySelectorAll('.quick-register').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const name = btn.dataset.name;
+        const code = btn.dataset.code;
+        const perms = btn.dataset.perms.split(',');
+
+        toolNameInput.value = name;
+        toolCodeInput.value = code;
+        permissionsCheckboxes.forEach(cb => {
+          cb.checked = perms.includes(cb.value);
+        });
+      });
+    });
+
+    // Quick execute examples
+    document.querySelectorAll('.quick-exec').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const name = btn.dataset.name;
+        const args = btn.dataset.args;
+
+        execNameInput.value = name;
+        execArgsInput.value = args;
+      });
+    });
+
+    // Load registry
+    btnLoad.addEventListener('click', async () => {
+      try {
+        await registry.load();
+      } catch (error) {
+        logEvent(`Failed to load registry: ${error.message}`, 'error');
+      }
+    });
+
+    // Save registry
+    btnSave.addEventListener('click', async () => {
+      try {
+        await registry.save();
+      } catch (error) {
+        logEvent(`Failed to save registry: ${error.message}`, 'error');
+      }
+    });
+
+    // Clear registry
+    btnClear.addEventListener('click', () => {
+      // This would need a clear method - for now, just reload
+      location.reload();
+    });
+
+    // Execute tool
+    btnExecute.addEventListener('click', async () => {
+      const name = execNameInput.value.trim();
+      if (!name) {
+        logEvent('Tool name is required for execution', 'error');
+        return;
+      }
+
+      const tool = registry.get(name);
+      if (!tool) {
+        logEvent(`Tool '${name}' not found`, 'error');
+        return;
+      }
+
+      try {
+        let args = {};
+        if (execArgsInput.value.trim()) {
+          args = JSON.parse(execArgsInput.value);
+        }
+
+        logEvent(`Executing tool: ${name} with args: ${JSON.stringify(args)}`);
+
+        // For demo purposes, we'll simulate execution by evaluating the tool's function
+        // In real implementation, this would go through ToolExecutor with sandboxing
+        let result;
+        try {
+          // Create a function from the stored code string
+          const func = new Function('args', `return (${tool.func})(args);`);
+          result = await func(args);
+        } catch (error) {
+          result = { error: error.message };
+        }
+
+        logEvent(`Tool result: ${JSON.stringify(result)}`, 'success');
+
+      } catch (error) {
+        logEvent(`Tool execution failed: ${error.message}`, 'error');
+      }
+    });
+
+    // Clear log
+    btnClearLog.addEventListener('click', () => {
+      eventLog.innerHTML = '';
+    });
+
+    // Initialize
+    await registerDefaultTools();
+    updateToolsList();
+    logEvent('Tool Registry demo initialized with default tools');
+  </script>
+</body>
+</html>

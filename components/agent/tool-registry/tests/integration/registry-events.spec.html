@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Tool Registry Events Integration Test</title>
+</head>
+<body>
+    <div id="test-results"></div>
+
+    <script type="module">
+        import ToolRegistry from '../../src/index.js';
+
+        class TestRunner {
+            constructor() {
+                this.tests = [];
+                this.passCount = 0;
+                this.failCount = 0;
+            }
+
+            test(name, fn) {
+                this.tests.push({ name, fn });
+            }
+
+            async runAll() {
+                const container = document.getElementById('test-results');
+
+                for (const test of this.tests) {
+                    const el = document.createElement('div');
+                    container.appendChild(el);
+                    try {
+                        await test.fn();
+                        this.passCount++;
+                        el.style.color = 'green';
+                        el.textContent = `✓ ${test.name}`;
+                    } catch (error) {
+                        this.failCount++;
+                        el.style.color = 'red';
+                        el.textContent = `✗ ${test.name}: ${error.message}`;
+                        console.error(error);
+                    }
+                }
+
+                const summary = document.createElement('div');
+                summary.style.fontWeight = 'bold';
+                summary.style.marginTop = '20px';
+                summary.textContent = `Tests completed: ${this.passCount} passed, ${this.failCount} failed`;
+                container.appendChild(summary);
+                
+                // Add status badge for test runner
+                const badge = document.createElement('div');
+                badge.id = 'status-badge';
+                badge.style.display = 'none';
+                badge.textContent = this.failCount === 0 ? 'All Tests Passed!' : 'Tests Failed';
+                document.body.appendChild(badge);
+                
+                const total = document.createElement('div'); total.id = 'total-count'; total.textContent = this.tests.length;
+                const pass = document.createElement('div'); pass.id = 'pass-count'; pass.textContent = this.passCount;
+                const fail = document.createElement('div'); fail.id = 'fail-count'; fail.textContent = this.failCount;
+                document.body.append(total, pass, fail);
+            }
+        }
+
+        const runner = new TestRunner();
+
+        runner.test('Event emission on registration', async () => {
+            const registry = new ToolRegistry();
+            let events = [];
+
+            registry.on('tool:registered', (tool) => {
+                events.push({ event: 'tool:registered', tool });
+            });
+
+            const tool = {
+                id: 'test-id',
+                name: 'test_tool',
+                version: 1,
+                func: 'async () => "test"',
+                schema: { type: 'object', properties: {} },
+                type: 'system',
+                permissions: [],
+                created: new Date().toISOString()
+            };
+
+            registry.register(tool);
+
+            expect(events).toHaveLength(1);
+            expect(events[0].event).toBe('tool:registered');
+            expect(events[0].tool).toEqual(tool);
+        });
+
+        runner.test('Event emission on unregistration', async () => {
+            const registry = new ToolRegistry();
+            let events = [];
+
+            registry.on('tool:unregistered', (tool) => {
+                events.push({ event: 'tool:unregistered', tool });
+            });
+
+            const tool = {
+                id: 'test-id',
+                name: 'test_tool',
+                version: 1,
+                func: 'async () => "test"',
+                schema: { type: 'object', properties: {} },
+                type: 'system',
+                permissions: [],
+                created: new Date().toISOString()
+            };
+
+            registry.register(tool);
+            registry.unregister('test_tool');
+
+            expect(events).toHaveLength(1);
+            expect(events[0].event).toBe('tool:unregistered');
+            expect(events[0].tool).toEqual(tool);
+        });
+
+        runner.test('Multiple event listeners', async () => {
+            const registry = new ToolRegistry();
+            let count1 = 0;
+            let count2 = 0;
+
+            registry.on('tool:registered', () => count1++);
+            registry.on('tool:registered', () => count2++);
+
+            const tool = {
+                id: 'test-id',
+                name: 'test_tool',
+                version: 1,
+                func: 'async () => "test"',
+                schema: { type: 'object', properties: {} },
+                type: 'system',
+                permissions: [],
+                created: new Date().toISOString()
+            };
+
+            registry.register(tool);
+
+            expect(count1).toBe(1);
+            expect(count2).toBe(1);
+        });
+
+        runner.test('Unsubscribe from events', async () => {
+            const registry = new ToolRegistry();
+            let count = 0;
+
+            const handler = () => count++;
+            const unsubscribe = registry.on('tool:registered', handler);
+            unsubscribe();
+
+            const tool = {
+                id: 'test-id',
+                name: 'test_tool',
+                version: 1,
+                func: 'async () => "test"',
+                schema: { type: 'object', properties: {} },
+                type: 'system',
+                permissions: [],
+                created: new Date().toISOString()
+            };
+
+            registry.register(tool);
+
+            expect(count).toBe(0);
+        });
+
+        // Simple expect function for tests
+        function expect(actual) {
+            return {
+                toBe(expected) {
+                    if (actual !== expected) {
+                        throw new Error(`Expected ${expected}, got ${actual}`);
+                    }
+                },
+                toEqual(expected) {
+                    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+                        throw new Error(`Expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+                    }
+                },
+                toHaveLength(expected) {
+                    if (actual.length !== expected) {
+                        throw new Error(`Expected length ${expected}, got ${actual.length}`);
+                    }
+                }
+            };
+        }
+
+        // Run tests when page loads
+        window.addEventListener('load', () => {
+            runner.runAll();
+        });
+    </script>
+</body>
+</html>

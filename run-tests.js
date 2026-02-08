@@ -14,6 +14,10 @@ const testFiles = [
   'components/storage/tool-store/tests/unit/tool-store.spec.html',
   'components/core/message-bridge/tests/integration/tool-approval-flow.spec.html',
   'components/storage/settings-store/tests/unit/settings-store.spec.html',
+  'components/agent/tool-registry/tests/unit/tool-registry.spec.html',
+  'components/agent/tool-registry/tests/unit/tool-validator.spec.html',
+  'components/agent/tool-registry/tests/integration/registry-persistence.spec.html',
+  'components/agent/tool-registry/tests/integration/registry-events.spec.html',
   'tests/integration/storage-consistency.spec.html'
 ];
 
@@ -23,7 +27,9 @@ const results = [];
 function startServer(port) {
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
-      const filePath = path.join(__dirname, req.url === '/' ? 'www/tests/index.html' : req.url);
+      let url = req.url === '/' ? 'www/tests/index.html' : req.url;
+      if (url.startsWith('/')) url = url.slice(1);
+      const filePath = path.join(__dirname, url);
       const ext = path.extname(filePath);
       const contentType = {
         '.html': 'text/html',

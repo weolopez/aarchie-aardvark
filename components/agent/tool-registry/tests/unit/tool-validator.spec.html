@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Tool Validator Unit Tests</title>
+</head>
+<body>
+    <div id="test-results"></div>
+
+    <script type="module">
+        import { validateTool } from '../../src/index.js';
+
+        class TestRunner {
+            constructor() {
+                this.tests = [];
+                this.passCount = 0;
+                this.failCount = 0;
+            }
+
+            test(name, fn) {
+                this.tests.push({ name, fn });
+            }
+
+            async runAll() {
+                const container = document.getElementById('test-results');
+
+                for (const test of this.tests) {
+                    const el = document.createElement('div');
+                    container.appendChild(el);
+                    try {
+                        await test.fn();
+                        this.passCount++;
+                        el.style.color = 'green';
+                        el.textContent = `✓ ${test.name}`;
+                    } catch (error) {
+                        this.failCount++;
+                        el.style.color = 'red';
+                        el.textContent = `✗ ${test.name}: ${error.message}`;
+                        console.error(error);
+                    }
+                }
+
+                const summary = document.createElement('div');
+                summary.style.fontWeight = 'bold';
+                summary.style.marginTop = '20px';
+                summary.textContent = `Tests completed: ${this.passCount} passed, ${this.failCount} failed`;
+                container.appendChild(summary);
+                
+                // Add status badge for test runner
+                const badge = document.createElement('div');
+                badge.id = 'status-badge';
+                badge.style.display = 'none';
+                badge.textContent = this.failCount === 0 ? 'All Tests Passed!' : 'Tests Failed';
+                document.body.appendChild(badge);
+                
+                const total = document.createElement('div'); total.id = 'total-count'; total.textContent = this.tests.length;
+                const pass = document.createElement('div'); pass.id = 'pass-count'; pass.textContent = this.passCount;
+                const fail = document.createElement('div'); fail.id = 'fail-count'; fail.textContent = this.failCount;
+                document.body.append(total, pass, fail);
+            }
+        }
+
+        const runner = new TestRunner();
+
+        runner.test('should validate a correct tool', () => {
+            const tool = {
+                id: 'test-id',
+                name: 'test_tool',
+                version: 1,
+                func: 'async () => "test"',
+                schema: { type: 'object', properties: {} },
+                type: 'system',
+                permissions: ['fs'],
+                created: new Date().toISOString()
+            };
+
+            expect(validateTool(tool)).toBe(true);
+        });
+
+        runner.test('should reject tool missing required fields', () => {
+            const invalidTool = { name: 'test' };
+            expect(validateTool(invalidTool)).toBe(false);
+        });
+
+        runner.test('should reject invalid name', () => {
+            const tool = {
+                id: 'test-id',
+                name: 'invalid name with spaces',
+                version: 1,
+                func: 'async () => "test"',
+                schema: { type: 'object', properties: {} },
+                type: 'system',
+                permissions: [],
+                created: new Date().toISOString()
+            };
+
+            expect(validateTool(tool)).toBe(false);
+        });
+
+        runner.test('should reject invalid version', () => {
+            const tool = {
+                id: 'test-id',
+                name: 'test_tool',
+                version: 0,
+                func: 'async () => "test"',
+                schema: { type: 'object', properties: {} },
+                type: 'system',
+                permissions: [],
+                created: new Date().toISOString()
+            };
+
+            expect(validateTool(tool)).toBe(false);
+        });
+
+        runner.test('should reject invalid type', () => {
+            const tool = {
+                id: 'test-id',
+                name: 'test_tool',
+                version: 1,
+                func: 'async () => "test"',
+                schema: { type: 'object', properties: {} },
+                type: 'invalid',
+                permissions: [],
+                created: new Date().toISOString()
+            };
+
+            expect(validateTool(tool)).toBe(false);
+        });
+
+        runner.test('should reject invalid permissions', () => {
+            const tool = {
+                id: 'test-id',
+                name: 'test_tool',
+                version: 1,
+                func: 'async () => "test"',
+                schema: { type: 'object', properties: {} },
+                type: 'system',
+                permissions: ['invalid'],
+                created: new Date().toISOString()
+            };
+
+            expect(validateTool(tool)).toBe(false);
+        });
+
+        runner.test('should reject invalid created date', () => {
+            const tool = {
+                id: 'test-id',
+                name: 'test_tool',
+                version: 1,
+                func: 'async () => "test"',
+                schema: { type: 'object', properties: {} },
+                type: 'system',
+                permissions: [],
+                created: 'invalid-date'
+            };
+
+            expect(validateTool(tool)).toBe(false);
+        });
+
+        // Simple expect function for tests
+        function expect(actual) {
+            return {
+                toBe(expected) {
+                    if (actual !== expected) {
+                        throw new Error(`Expected ${expected}, got ${actual}`);
+                    }
+                },
+                toEqual(expected) {
+                    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+                        throw new Error(`Expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+                    }
+                },
+                toHaveLength(expected) {
+                    if (actual.length !== expected) {
+                        throw new Error(`Expected length ${expected}, got ${actual.length}`);
+                    }
+                }
+            };
+        }
+
+        // Run tests when page loads
+        window.addEventListener('load', () => {
+            runner.runAll();
+        });
+    </script>
+</body>
+</html>

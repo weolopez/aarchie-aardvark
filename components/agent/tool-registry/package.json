@@ -1,0 +1,13 @@
+{
+  "name": "@aardvark/tool-registry",
+  "version": "1.0.0",
+  "description": "In-memory tool registry for the Aardvark coding agent",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "test": "node ../../run-tests.js"
+  },
+  "keywords": ["tool", "registry", "agent"],
+  "author": "Aardvark Team",
+  "license": "MIT"
+}
