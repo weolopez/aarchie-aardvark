@@ -82,9 +82,9 @@ const jsFiles = await fileStore.glob('myproject', '**/*.js');
 ```javascript
 // Load repository from GitHub
 await fileStore.loadFromGitHub(
-  'react-local',     // Local repository name
-  'facebook',        // GitHub owner
-  'react',           // Repository name
+  'aardvark-local',  // Local repository name
+  'weolopez',        // GitHub owner
+  'aardvark',        // Repository name
   'main',            // Branch (optional)
   {
     token: 'ghp_...', // GitHub token (optional, for private repos)
