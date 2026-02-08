@@ -29,186 +29,143 @@ The agent enables developers to:
 
 ## System Context
 
-```mermaid
-flowchart TB
-    subgraph Browser["Web Browser"]
-        subgraph App["Coding Agent Application"]
-            subgraph MainThread["Main Thread (JavaScript)"]
-                UI["Chat UI"]
-            end
-            subgraph WorkerThread["Web Worker"]
-                Agent["Integrated Agent<br/>(JavaScript)"]
-                GL["GitHub Loader"]
-            end
-            DB[(IndexedDB)]
-            OPFS[(OPFS)]
-        end
-    end
-    
-    User["Developer/User"]
-    GitHub["GitHub API"]
-    Gemini["Google Gemini API"]
-    
-    User -->|Chat messages| UI
-    UI -->|Send messages| Agent
-    UI -->|Display results| User
-    User -->|Review & approve| UI
-    UI -->|Approve/Reject| Agent
-    Agent -->|LLM requests| Gemini
-    Gemini -->|Responses| Agent
-    Agent -->|Read/Write| OPFS
-    Agent <-->|Read/Write| DB
-    Agent -->|Trigger load| GL
-    GL -->|Fetch repo| GitHub
-    GL -->|Write files| OPFS
-```
+The agent enables developers to:
+- Load GitHub repositories into a local OPFS-backed filesystem
+- Chat with an AI assistant that can read, write, and edit files
+- Create custom JavaScript tools dynamically
+- Maintain branching conversation histories
 
----
+## Component Architecture
 
-## Container Architecture
+The system follows a modular, event-driven JavaScript architecture organized into five main layers:
 
 ```mermaid
-flowchart TB
-    subgraph Browser["Browser Environment"]
-        subgraph MainThread["Main Thread"]
-            UI["Chat UI<br/>React/Vanilla JS"]
-        end
-        
-        subgraph Worker["Web Worker"]
-            Agent["Agent Core<br/>LLM Loop, Session Mgmt"]
-            ToolRunner["Tool Runner<br/>(Internal)"]
-            GL["GitHub Loader"]
-        end
-        
-        subgraph Storage["Storage Layer"]
-            subgraph OPFS["OPFS (Origin Private File System)"]
-                RepoFiles["Repository Files<br/>(path → content)"]
-                ToolFiles[".tools/*/<br/>(tool definitions as SKILL.md files)"]
-            end
-            subgraph IndexedDB["IndexedDB"]
-                SessionsTable["sessions<br/>(conversation tree)"]
-                PendingTools["pending_tools<br/>(approval queue)"]
-                HistoryTable["history<br/>(tool executions)"]
-            end
-        end
+graph TB
+    subgraph UI["UI Layer (Main Thread)"]
+        ChatUI["Chat UI"]
+        PreviewEngine["Component Preview Engine"]
+        SessionTreeUI["Session Tree UI"]
+        ToolApprovalUI["Tool Approval UI"]
+        ExportUI["Export UI"]
     end
+
+    subgraph Core["Core Layer"]
+        EventBus["Event Bus"]
+        MsgBridge["Message Bridge"]
+        APIClient["API Client"]
+        IndexedDB["IndexedDB Provider"]
+        OPFS["OPFS Provider"]
+    end
+
+    subgraph Agent["Agent Layer (Worker)"]
+        AgentCore["Agent Core"]
+        ToolRegistry["Tool Registry (Memory)"]
+        SessionMgr["Session Manager"]
+        ContextBuilder["Context Builder"]
+        Compaction["Compaction Engine"]
+        ExportMgr["Export Manager"]
+    end
+
+    subgraph Storage["Storage Layer"]
+        RepoStore["Repo Store (OPFS)"]
+        GlobalStore["Global Store (IndexedDB)"]
+        HistoryStore["History Store"]
+        SettingsStore["Settings Store"]
+    end
+
+    UI <--> EventBus
+    EventBus <--> MsgBridge
+    MsgBridge <--> Agent
     
-    LLM["Gemini API"]
-    GitHubAPI["GitHub API"]
+    AgentCore --> ToolRegistry
+    ToolRegistry -- Load/Persist --> GlobalStore
+    AgentCore -- Read/Write --> RepoStore
     
-    UI <-->|postMessage| Agent
-    Agent -->|Execute| ToolRunner
-    ToolRunner -->|CRUD| RepoFiles
-    ToolRunner -->|Query| ToolFiles
-    ToolRunner -->|Results| Agent
-    Agent <-->|Read/Write| SessionsTable
-    Agent -->|Query| ToolFiles
-    Agent -->|API calls| LLM
-    GL -->|Fetch repos| GitHubAPI
-    GL -->|Write files| RepoFiles
-    Agent -->|Trigger load| GL
-    Agent -->|Query structure| OPFS
+    AgentCore -- "Preview Events" --> PreviewEngine
+    
+    Storage --> Core
 ```
 
-### Container Responsibilities
+### Component Responsibilities
 
-| Container | Technology | Responsibility |
-|-----------|-----------|----------------|
-| Chat UI | JavaScript | User interface for chat, displays messages, tool approval UI |
-| Integrated Agent | JavaScript (Web Worker) | LLM chat loop, session management, tool dispatch, file structure queries, tool execution |
-| GitHub Loader | JavaScript (Web Worker) | Fetches repositories from GitHub API, writes files and tools to OPFS |
-| OPFS | Browser API | File storage for repository contents and tool definitions (`.tools/` directory) |
-| IndexedDB | Browser API | Session tree, pending tool approvals, execution history |
+| Layer | Component | Responsibility |
+|-------|-----------|----------------|
+| **UI** | Chat UI | Renders chat interface and message history |
+| | **Preview Engine** | **New**: Dynamically registers and renders Web Components sent by the Agent |
+| | Session Tree UI | Displays and navigates conversation branches |
+| | Tool Approval UI | Intercepts new tool definitions and component renders for user consent |
+| **Core** | Event Bus | Central pub/sub messaging system for component decoupling |
+| | Message Bridge | Handles communication between Main Thread and Web Worker |
+| | API Client | Manages communication with LLM providers (Gemini, etc.) |
+| **Storage** | **Repo Store** | Manages repository source code (OPFS) |
+| | **Global Store** | **New**: Stores the `tools` registry and `sessions` (IndexedDB) |
+| **Agent** | **Tool Registry** | **New**: In-memory map of executable functions, hydrated from IndexedDB |
+| | Agent Core | Manages the LLM loop and orchestrates tool execution |
+| | Session Manager | Manages conversation state and branching |
 
 ---
 
 ## Component Details
 
-### Tool System Architecture
+### Tool System Architecture (Registry Model)
+
+Unlike the previous file-based model, the Agent does not scan directories. It loads a structured registry at startup.
 
 ```mermaid
 flowchart TB
     subgraph AgentWorker["Integrated Agent (Worker)"]
         AgentCore["Agent Core"]
-        ToolDispatcher["Tool Dispatcher"]
-        ToolRunner["Tool Runner"]
-        SessionMgr["Session Manager"]
+        Registry["Tool Registry (Map)"]
+        Executor["Tool Executor"]
         
-        subgraph ToolImpls["Tool Implementations"]
-            Read["read()"]
-            Write["write()"]
-            Edit["edit()"]
-            Grep["grep()"]
-            Find["find()"]
-            JS["js()"]
+        subgraph Scope["Execution Sandbox"]
+            API["External APIs"]
+            OPFS["File System"]
+            UIChannel["UI Event Channel"]
         end
     end
     
-    subgraph Storage["Storage Layer"]
-        subgraph OPFS["OPFS"]
-            RepoFiles["Repository Files"]
-            subgraph ToolDirs[".tools/*/"]
-                SkillMdFiles["SKILL.md files"]
-            end
-        end
-        subgraph IndexedDB["IndexedDB"]
-            PendingTools["pending_tools<br/>(approval queue)"]
-        end
+    subgraph Storage["IndexedDB"]
+        DBTools["'tools' Store"]
     end
     
-    AgentCore -->|1. Scan .tools/| ToolDispatcher
-    AgentCore -->|4. Dispatch| ToolDispatcher
+    %% Startup
+    DBTools -->|1. Hydrate| Registry
     
-    ToolDispatcher -->|2. Load Definition| SkillMdFiles
-    ToolDispatcher -->|5. Execute| ToolRunner
+    %% Execution Loop
+    AgentCore -->|2. Get Definition| Registry
+    AgentCore -->|3. Select Tool| AgentCore
+    AgentCore -->|4. Invoke| Executor
     
-    ToolRunner -->|Lookup| ToolImpls
-    ToolImpls -->|6. CRUD| RepoFiles
+    Executor -->|5. Lookup| Registry
+    Registry -->|6. Return Function| Executor
     
-    ToolRunner -->|7. Return| ToolDispatcher
-    ToolDispatcher -->|8. Return| AgentCore
+    Executor -->|7. Execute| Scope
+    Scope -->|8. Result| AgentCore
 ```
 
 ### Component Descriptions
 
-#### Agent Core (JavaScript)
-- Manages the LLM conversation loop
-- Maintains session tree state
-- Discovers tools by scanning OPFS `.tools/` directory at startup
-- Queries OPFS for file structure to provide context to LLM
-- Receives tool results and feeds back to LLM
+#### Tool Registry (JavaScript/Memory)
 
-#### Tool Dispatcher (JavaScript)
-- Scans OPFS `.tools/` directory to discover available tools
-- Parses SKILL.md files to extract frontmatter (name, description, allowed-tools)
-- Loads full instructions from SKILL.md markdown content when tool is invoked
-- Converts tool definitions to Gemini function declarations
-- Routes incoming tool calls from LLM to appropriate handler
+* **Role**: The "Brain's Library."
+* **Behavior**: On worker startup, it reads all valid tools from IndexedDB into a `Map<string, Tool>`.
+* **Benefits**: Zero-latency lookups. Tools travel with the user, not the repo.
 
-#### Tool Runner (JavaScript)
-- Receives tool calls from the Dispatcher
-- Executes tool with provided arguments
-- Built-in tools are executed directly
-- Dynamic tools (JS) are executed via `new Function` (sandboxed in Worker)
-- Returns result to Dispatcher
+#### Tool Executor
 
-#### Built-in Tools
-All tools operate directly on OPFS from within the Worker:
+* **Role**: The Runtime.
+* **Behavior**: Executes the JavaScript functions.
+* **Sandboxing**: Wraps execution in a scope that provides specific capabilities (`fetch`, `OPFS`, `postMessage` for UI updates) but restricts access to the raw Worker global scope.
 
-| Tool | Purpose | OPFS Operations |
-|------|---------|---------------------|
-| `read` | Read file contents with line numbers | getFileHandle → read |
-| `write` | Write/create files | getFileHandle → createWritable → write |
-| `edit` | Surgical find-and-replace | read → modify → write |
-| `ls` | List directory contents | Read directory entries |
-| `grep` | Search file contents | Walk directory → read each |
-| `find` | Discover files by pattern | Walk directory → filter paths |
-| `js` | Execute JavaScript | Arbitrary (via user code) |
+#### Preview Engine (Main Thread)
 
-#### Session Manager (JavaScript)
-- Manages branching conversation tree
-- Persists session changes to IndexedDB
-- Rebuilds conversation history for LLM from current branch
+* **Role**: The Visualizer.
+* **Behavior**: Listens for `preview_component` messages.
+* **Mechanism**:
+1. Receives HTML/JS string.
+2. Encapsulates it (Shadow DOM or `customElements.define`).
+3. Mounts it to the chat stream or a dedicated preview panel.
 
 ---
 
