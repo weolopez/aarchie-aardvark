@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Session Tree - Unit Tests</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <div class="max-w-4xl mx-auto p-6">
+    <header class="mb-8">
+      <h1 class="text-3xl font-bold text-gray-800 mb-2">Session Tree - Unit Tests</h1>
+      <p class="text-gray-600">Testing tree-structured session management and branching logic</p>
+    </header>
+
+    <div id="test-results" class="space-y-4">
+      <div class="bg-blue-50 border-l-4 border-blue-400 p-4">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+            </svg>
+          </div>
+          <div class="ml-3">
+            <p class="text-sm text-blue-700">
+              Running Session Tree unit tests...
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="test-status" class="mt-8 hidden">
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">Test Results</h2>
+        <div class="flex items-center space-x-4 mb-4">
+          <span id="status-badge" class="px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">Running...</span>
+          <span id="total-count" class="text-gray-600">0</span> total,
+          <span id="pass-count" class="text-green-600">0</span> passed,
+          <span id="fail-count" class="text-red-600">0</span> failed
+        </div>
+        <div id="status-content"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { SessionTree } from '../../src/session-tree.js';
+    import { SessionHeader, MessageEntry } from '../../src/models.js';
+
+    // Test framework
+    let tests = [];
+    let passed = 0;
+    let failed = 0;
+
+    function test(name, fn) {
+      tests.push({ name, fn });
+    }
+
+    function assert(condition, message) {
+      if (!condition) {
+        throw new Error(message);
+      }
+    }
+
+    function assertEqual(a, b, message) {
+      if (a !== b) {
+        throw new Error(`${message}: expected ${b}, got ${a}`);
+      }
+    }
+
+    function assertThrows(fn, message) {
+      try {
+        fn();
+        throw new Error(`${message}: expected function to throw`);
+      } catch (e) {
+        if (e.message === `${message}: expected function to throw`) {
+          throw e;
+        }
+      }
+    }
+
+    // SessionTree constructor tests
+    test('SessionTree constructor creates root header', () => {
+      const tree = new SessionTree('/home/user/project');
+
+      assert(tree.entries.size === 1, 'Should have one entry (root header)');
+      assert(tree.rootId === tree.leafId, 'Root and leaf should be the same initially');
+
+      const root = tree.entries.get(tree.rootId);
+      assert(root instanceof SessionHeader, 'Root should be SessionHeader');
+      assertEqual(root.cwd, '/home/user/project', 'CWD should match');
+    });
+
+    test('SessionTree constructor with default CWD', () => {
+      const tree = new SessionTree();
+
+      const root = tree.entries.get(tree.rootId);
+      assertEqual(root.cwd, '/home/user/project', 'Should use default CWD');
+    });
+
+    // appendMessage tests
+    test('appendMessage adds message to leaf', () => {
+      const tree = new SessionTree();
+      const initialSize = tree.entries.size;
+      const initialLeaf = tree.leafId;
+
+      const messageId = tree.appendMessage('user', 'Hello world');
+
+      assert(tree.entries.size === initialSize + 1, 'Should add one entry');
+      assert(tree.leafId !== initialLeaf, 'Leaf should change');
+      assertEqual(tree.leafId, messageId, 'Leaf should be new message ID');
+
+      const message = tree.entries.get(messageId);
+      assert(message instanceof MessageEntry, 'Entry should be MessageEntry');
+      assertEqual(message.role, 'user', 'Role should match');
+      assertEqual(message.content, 'Hello world', 'Content should match');
+      assertEqual(message.parentId, initialLeaf, 'Parent should be previous leaf');
+    });
+
+    // branch tests
+    test('branch moves leaf pointer', () => {
+      const tree = new SessionTree();
+      const msg1 = tree.appendMessage('user', 'First message');
+      const msg2 = tree.appendMessage('assistant', 'Response');
+
+      // Branch back to first message
+      tree.branch(msg1);
+
+      assertEqual(tree.leafId, msg1, 'Leaf should be set to branched entry');
+      assert(tree.entries.has(msg2), 'Should still have second message in tree');
+    });
+
+    test('branch throws on invalid entry', () => {
+      const tree = new SessionTree();
+
+      assertThrows(() => {
+        tree.branch('invalid-id');
+      }, 'Should throw for invalid entry ID');
+    });
+
+    // getHistory tests
+    test('getHistory returns linear path from root to leaf', () => {
+      const tree = new SessionTree();
+      const msg1 = tree.appendMessage('user', 'First');
+      const msg2 = tree.appendMessage('assistant', 'Second');
+
+      const history = tree.getHistory();
+
+      assert(history.length === 3, 'Should have 3 entries: header + 2 messages');
+      assert(history[0] instanceof SessionHeader, 'First should be header');
+      assert(history[1] instanceof MessageEntry, 'Second should be message');
+      assert(history[2] instanceof MessageEntry, 'Third should be message');
+      assertEqual(history[1].content, 'First', 'First message content');
+      assertEqual(history[2].content, 'Second', 'Second message content');
+    });
+
+    test('getHistory after branching', () => {
+      const tree = new SessionTree();
+      const msg1 = tree.appendMessage('user', 'First');
+      const msg2 = tree.appendMessage('assistant', 'Second');
+
+      tree.branch(msg1);
+      const msg3 = tree.appendMessage('user', 'Branch message');
+
+      const history = tree.getHistory();
+
+      assert(history.length === 3, 'Should have 3 entries after branch');
+      assertEqual(history[2].content, 'Branch message', 'Last should be branch message');
+    });
+
+    // getTree tests
+    test('getTree returns copy of entries map', () => {
+      const tree = new SessionTree();
+      tree.appendMessage('user', 'Test');
+
+      const treeMap = tree.getTree();
+
+      assert(treeMap instanceof Map, 'Should return Map');
+      assert(treeMap.size === tree.entries.size, 'Should have same size');
+      assert(treeMap !== tree.entries, 'Should be different object');
+    });
+
+    // Utility method tests
+    test('getLeafId returns current leaf', () => {
+      const tree = new SessionTree();
+      const initialLeaf = tree.getLeafId();
+
+      const newLeaf = tree.appendMessage('user', 'Test');
+
+      assertEqual(tree.getLeafId(), newLeaf, 'Should return updated leaf');
+    });
+
+    test('getRootId returns root', () => {
+      const tree = new SessionTree();
+      const rootId = tree.getRootId();
+
+      assert(tree.entries.has(rootId), 'Root should exist in entries');
+      const root = tree.entries.get(rootId);
+      assert(root instanceof SessionHeader, 'Root should be SessionHeader');
+    });
+
+    test('hasEntry checks existence', () => {
+      const tree = new SessionTree();
+      const msgId = tree.appendMessage('user', 'Test');
+
+      assert(tree.hasEntry(tree.rootId), 'Should have root');
+      assert(tree.hasEntry(msgId), 'Should have message');
+      assert(!tree.hasEntry('nonexistent'), 'Should not have nonexistent');
+    });
+
+    test('getEntry returns entry or null', () => {
+      const tree = new SessionTree();
+      const msgId = tree.appendMessage('user', 'Test');
+
+      assert(tree.getEntry(tree.rootId) instanceof SessionHeader, 'Should return root');
+      assert(tree.getEntry(msgId) instanceof MessageEntry, 'Should return message');
+      assert(tree.getEntry('nonexistent') === null, 'Should return null for nonexistent');
+    });
+
+    test('getAllEntries returns array of all entries', () => {
+      const tree = new SessionTree();
+      tree.appendMessage('user', 'Test 1');
+      tree.appendMessage('assistant', 'Test 2');
+
+      const all = tree.getAllEntries();
+
+      assert(Array.isArray(all), 'Should return array');
+      assert(all.length === 3, 'Should have 3 entries');
+      assert(all.some(e => e instanceof SessionHeader), 'Should include header');
+      assert(all.filter(e => e instanceof MessageEntry).length === 2, 'Should include 2 messages');
+    });
+
+    test('clear resets tree', () => {
+      const tree = new SessionTree('/original/cwd');
+      tree.appendMessage('user', 'Test');
+
+      tree.clear();
+
+      assert(tree.entries.size === 1, 'Should have only root after clear');
+      assert(tree.rootId !== undefined, 'Should have new root');
+      assert(tree.leafId === tree.rootId, 'Leaf should equal root');
+
+      const newRoot = tree.entries.get(tree.rootId);
+      assert(newRoot instanceof SessionHeader, 'New root should be SessionHeader');
+      assertEqual(newRoot.cwd, '/home/user/project', 'Should use default CWD');
+    });
+
+    // Run tests
+    async function runTests() {
+      const resultsDiv = document.getElementById('test-results');
+      const statusDiv = document.getElementById('test-status');
+      const statusBadge = document.getElementById('status-badge');
+      const totalCount = document.getElementById('total-count');
+      const passCount = document.getElementById('pass-count');
+      const failCount = document.getElementById('fail-count');
+      const statusContent = document.getElementById('status-content');
+
+      totalCount.textContent = tests.length;
+
+      for (const test of tests) {
+        try {
+          await test.fn();
+          passed++;
+
+          const resultDiv = document.createElement('div');
+          resultDiv.className = 'bg-green-50 border-l-4 border-green-400 p-4';
+          resultDiv.innerHTML = `
+            <div class="flex">
+              <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                </svg>
+              </div>
+              <div class="ml-3">
+                <p class="text-sm text-green-700">${test.name}</p>
+              </div>
+            </div>
+          `;
+          resultsDiv.appendChild(resultDiv);
+
+        } catch (error) {
+          failed++;
+
+          const resultDiv = document.createElement('div');
+          resultDiv.className = 'bg-red-50 border-l-4 border-red-400 p-4';
+          resultDiv.innerHTML = `
+            <div class="flex">
+              <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                </svg>
+              </div>
+              <div class="ml-3">
+                <p class="text-sm text-red-700">${test.name}</p>
+                <p class="text-sm text-red-600 mt-1">${error.message}</p>
+              </div>
+            </div>
+          `;
+          resultsDiv.appendChild(resultDiv);
+        }
+
+        passCount.textContent = passed;
+        failCount.textContent = failed;
+      }
+
+      // Update status
+      statusDiv.classList.remove('hidden');
+
+      if (failed === 0) {
+        statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800';
+        statusBadge.textContent = 'All Passed';
+        statusContent.innerHTML = '<p class="text-green-700">All tests passed successfully!</p>';
+      } else {
+        statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800';
+        statusBadge.textContent = 'Some Failed';
+        statusContent.innerHTML = `<p class="text-red-700">${failed} test(s) failed. Check the results above.</p>`;
+      }
+    }
+
+    // Start tests
+    runTests().catch(console.error);
+  </script>
+</body>
+</html>

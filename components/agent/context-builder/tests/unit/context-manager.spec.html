@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Context Manager - Unit Tests</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .test-result { transition: all 0.3s ease; }
+    .test-passed { background-color: #d1fae5; border-color: #10b981; }
+    .test-failed { background-color: #fee2e2; border-color: #ef4444; }
+  </style>
+</head>
+<body class="bg-gray-50 p-8">
+  <div class="max-w-4xl mx-auto">
+    <h1 class="text-3xl font-bold text-gray-800 mb-8">Context Manager - Unit Tests</h1>
+
+    <div id="test-status" class="bg-white rounded-lg shadow-md p-6 mb-8">
+      <div class="flex items-center justify-between">
+        <h2 class="text-xl font-semibold text-gray-800">Test Results</h2>
+        <div class="flex items-center space-x-4">
+          <span id="status-badge" class="px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">Running...</span>
+          <span id="total-count" class="text-gray-600">0</span> total,
+          <span id="pass-count" class="text-green-600">0</span> passed,
+          <span id="fail-count" class="text-red-600">0</span> failed
+        </div>
+      </div>
+    </div>
+
+    <div id="test-results" class="space-y-4"></div>
+  </div>
+
+  <script type="module">
+    import { ContextManager } from '../../src/context-manager.js';
+    import { PromptBuilder } from '../../src/prompt-builder.js';
+    import { ToolAnalyzer } from '../../src/tool-analyzer.js';
+    import { ConversationOptimizer } from '../../src/conversation-optimizer.js';
+
+    // Mock dependencies
+    class MockToolRegistry {
+      async getAllTools() {
+        return [];
+      }
+    }
+
+    class MockSessionManager {}
+
+    // Test framework
+    let tests = [];
+    let passed = 0;
+    let failed = 0;
+
+    function test(name, fn) {
+      tests.push({ name, fn });
+    }
+
+    function assert(condition, message) {
+      if (!condition) {
+        throw new Error(message);
+      }
+    }
+
+    function assertEqual(a, b, message) {
+      if (a !== b) {
+        throw new Error(`${message}: expected ${b}, got ${a}`);
+      }
+    }
+
+    // Context Manager tests
+    test('ContextManager constructor', () => {
+      const toolAnalyzer = new ToolAnalyzer(new MockToolRegistry());
+      const conversationOptimizer = new ConversationOptimizer(new MockSessionManager());
+      const promptBuilder = new PromptBuilder(toolAnalyzer, conversationOptimizer);
+      const contextManager = new ContextManager(promptBuilder, conversationOptimizer);
+
+      assert(contextManager.promptBuilder === promptBuilder, 'Should store prompt builder');
+      assert(contextManager.conversationOptimizer === conversationOptimizer, 'Should store conversation optimizer');
+      assert(contextManager.contextWindows instanceof Map, 'Should initialize context windows map');
+    });
+
+    test('getContextWindow - new session', () => {
+      const toolAnalyzer = new ToolAnalyzer(new MockToolRegistry());
+      const conversationOptimizer = new ConversationOptimizer(new MockSessionManager());
+      const promptBuilder = new PromptBuilder(toolAnalyzer, conversationOptimizer);
+      const contextManager = new ContextManager(promptBuilder, conversationOptimizer);
+
+      const window = contextManager.getContextWindow('session1');
+
+      assert(window, 'Should return context window');
+      assert(Array.isArray(window.messages), 'Should have messages array');
+      assert(typeof window.tokenCount === 'number', 'Should have token count');
+      assert(typeof window.lastUpdated === 'number', 'Should have last updated timestamp');
+    });
+
+    test('getContextWindow - existing session', () => {
+      const toolAnalyzer = new ToolAnalyzer(new MockToolRegistry());
+      const conversationOptimizer = new ConversationOptimizer(new MockSessionManager());
+      const promptBuilder = new PromptBuilder(toolAnalyzer, conversationOptimizer);
+      const contextManager = new ContextManager(promptBuilder, conversationOptimizer);
+
+      const window1 = contextManager.getContextWindow('session1');
+      window1.messages.push({ role: 'user', content: 'test' });
+
+      const window2 = contextManager.getContextWindow('session1');
+
+      assert(window2 === window1, 'Should return same window instance');
+      assert(window2.messages.length === 1, 'Should preserve messages');
+    });
+
+    test('updateContextWindow', async () => {
+      const toolAnalyzer = new ToolAnalyzer(new MockToolRegistry());
+      const conversationOptimizer = new ConversationOptimizer(new MockSessionManager());
+      const promptBuilder = new PromptBuilder(toolAnalyzer, conversationOptimizer);
+      const contextManager = new ContextManager(promptBuilder, conversationOptimizer);
+
+      const newMessages = [
+        { role: 'user', content: 'Hello' },
+        { role: 'assistant', content: 'Hi there!' }
+      ];
+
+      await contextManager.updateContextWindow('session1', newMessages, 1000);
+
+      const window = contextManager.getContextWindow('session1');
+      assert(window.messages.length === 2, 'Should add messages');
+      assert(window.tokenCount > 0, 'Should update token count');
+    });
+
+    test('getCurrentContext', () => {
+      const toolAnalyzer = new ToolAnalyzer(new MockToolRegistry());
+      const conversationOptimizer = new ConversationOptimizer(new MockSessionManager());
+      const promptBuilder = new PromptBuilder(toolAnalyzer, conversationOptimizer);
+      const contextManager = new ContextManager(promptBuilder, conversationOptimizer);
+
+      const messages = [{ role: 'user', content: 'test' }];
+      contextManager.getContextWindow('session1').messages = messages;
+
+      const context = contextManager.getCurrentContext('session1');
+
+      assert(context === messages, 'Should return current messages');
+    });
+
+    test('clearContextWindow', () => {
+      const toolAnalyzer = new ToolAnalyzer(new MockToolRegistry());
+      const conversationOptimizer = new ConversationOptimizer(new MockSessionManager());
+      const promptBuilder = new PromptBuilder(toolAnalyzer, conversationOptimizer);
+      const contextManager = new ContextManager(promptBuilder, conversationOptimizer);
+
+      contextManager.getContextWindow('session1').messages = [{ role: 'user', content: 'test' }];
+      contextManager.clearContextWindow('session1');
+
+      const window = contextManager.getContextWindow('session1');
+      assert(window.messages.length === 0, 'Should clear messages');
+    });
+
+    test('getContextStats', () => {
+      const toolAnalyzer = new ToolAnalyzer(new MockToolRegistry());
+      const conversationOptimizer = new ConversationOptimizer(new MockSessionManager());
+      const promptBuilder = new PromptBuilder(toolAnalyzer, conversationOptimizer);
+      const contextManager = new ContextManager(promptBuilder, conversationOptimizer);
+
+      const window = contextManager.getContextWindow('session1');
+      window.messages = [
+        { role: 'user', content: 'Hello' },
+        { role: 'assistant', content: 'Hi' }
+      ];
+      window.tokenCount = 50;
+
+      const stats = contextManager.getContextStats('session1');
+
+      assert(stats.messageCount === 2, 'Should count messages');
+      assert(stats.tokenCount === 50, 'Should return token count');
+      assert(typeof stats.lastUpdated === 'number', 'Should have last updated');
+      assert(typeof stats.averageTokensPerMessage === 'number', 'Should calculate average');
+    });
+
+    test('needsOptimization - under limit', () => {
+      const toolAnalyzer = new ToolAnalyzer(new MockToolRegistry());
+      const conversationOptimizer = new ConversationOptimizer(new MockSessionManager());
+      const promptBuilder = new PromptBuilder(toolAnalyzer, conversationOptimizer);
+      const contextManager = new ContextManager(promptBuilder, conversationOptimizer);
+
+      contextManager.getContextWindow('session1').tokenCount = 500;
+
+      const needsOpt = contextManager.needsOptimization('session1', 1000);
+      assert(needsOpt === false, 'Should not need optimization when under limit');
+    });
+
+    test('needsOptimization - over limit', () => {
+      const toolAnalyzer = new ToolAnalyzer(new MockToolRegistry());
+      const conversationOptimizer = new ConversationOptimizer(new MockSessionManager());
+      const promptBuilder = new PromptBuilder(toolAnalyzer, conversationOptimizer);
+      const contextManager = new ContextManager(promptBuilder, conversationOptimizer);
+
+      contextManager.getContextWindow('session1').tokenCount = 1500;
+
+      const needsOpt = contextManager.needsOptimization('session1', 1000);
+      assert(needsOpt === true, 'Should need optimization when over limit');
+    });
+
+    test('getActiveSessions', () => {
+      const toolAnalyzer = new ToolAnalyzer(new MockToolRegistry());
+      const conversationOptimizer = new ConversationOptimizer(new MockSessionManager());
+      const promptBuilder = new PromptBuilder(toolAnalyzer, conversationOptimizer);
+      const contextManager = new ContextManager(promptBuilder, conversationOptimizer);
+
+      contextManager.getContextWindow('session1');
+      contextManager.getContextWindow('session2');
+
+      const active = contextManager.getActiveSessions();
+      assert(Array.isArray(active), 'Should return array');
+      assert(active.includes('session1'), 'Should include session1');
+      assert(active.includes('session2'), 'Should include session2');
+    });
+
+    test('cleanupOldContexts', () => {
+      const toolAnalyzer = new ToolAnalyzer(new MockToolRegistry());
+      const conversationOptimizer = new ConversationOptimizer(new MockSessionManager());
+      const promptBuilder = new PromptBuilder(toolAnalyzer, conversationOptimizer);
+      const contextManager = new ContextManager(promptBuilder, conversationOptimizer);
+
+      // Create old context
+      const oldTime = Date.now() - 7200000; // 2 hours ago
+      const window = contextManager.getContextWindow('oldSession');
+      window.lastUpdated = oldTime;
+
+      // Create new context
+      contextManager.getContextWindow('newSession');
+
+      const cleaned = contextManager.cleanupOldContexts(3600000); // 1 hour max age
+
+      assert(cleaned === 1, 'Should clean up 1 old context');
+      assert(contextManager.getActiveSessions().length === 1, 'Should have 1 active session remaining');
+      assert(contextManager.getActiveSessions()[0] === 'newSession', 'Should keep new session');
+    });
+
+    // Run tests
+    async function runTests() {
+      const resultsDiv = document.getElementById('test-results');
+      const statusDiv = document.getElementById('test-status');
+      const statusBadge = document.getElementById('status-badge');
+      const totalCount = document.getElementById('total-count');
+      const passCount = document.getElementById('pass-count');
+      const failCount = document.getElementById('fail-count');
+
+      totalCount.textContent = tests.length;
+
+      for (const test of tests) {
+        try {
+          await test.fn();
+          passed++;
+
+          const resultDiv = document.createElement('div');
+          resultDiv.className = 'bg-green-50 border-l-4 border-green-400 p-4 test-result test-passed';
+          resultDiv.innerHTML = `
+            <div class="flex">
+              <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                </svg>
+              </div>
+              <div class="ml-3">
+                <p class="text-sm text-green-700 font-medium">${test.name}</p>
+              </div>
+            </div>
+          `;
+          resultsDiv.appendChild(resultDiv);
+
+        } catch (error) {
+          failed++;
+
+          const resultDiv = document.createElement('div');
+          resultDiv.className = 'bg-red-50 border-l-4 border-red-400 p-4 test-result test-failed';
+          resultDiv.innerHTML = `
+            <div class="flex">
+              <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                </svg>
+              </div>
+              <div class="ml-3">
+                <p class="text-sm text-red-700 font-medium">${test.name}</p>
+                <p class="text-sm text-red-600 mt-1">${error.message}</p>
+              </div>
+            </div>
+          `;
+          resultsDiv.appendChild(resultDiv);
+        }
+
+        passCount.textContent = passed;
+        failCount.textContent = failed;
+      }
+
+      // Update status
+      statusDiv.classList.remove('hidden');
+
+      if (failed === 0) {
+        statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-blue-800';
+        statusBadge.textContent = 'All Passed';
+      } else {
+        statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800';
+        statusBadge.textContent = 'Some Failed';
+      }
+    }
+
+    // Start tests
+    runTests().catch(console.error);
+  </script>
+</body>
+</html>

@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Session Manager Models - Unit Tests</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <div class="max-w-4xl mx-auto p-6">
+    <header class="mb-8">
+      <h1 class="text-3xl font-bold text-gray-800 mb-2">Session Manager Models - Unit Tests</h1>
+      <p class="text-gray-600">Testing session data structures and type guards</p>
+    </header>
+
+    <div id="test-results" class="space-y-4">
+      <div class="bg-blue-50 border-l-4 border-blue-400 p-4">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+            </svg>
+          </div>
+          <div class="ml-3">
+            <p class="text-sm text-blue-700">
+              Running Session Manager Models unit tests...
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="test-status" class="mt-8 hidden">
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">Test Results</h2>
+        <div class="flex items-center space-x-4 mb-4">
+          <span id="status-badge" class="px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">Running...</span>
+          <span id="total-count" class="text-gray-600">0</span> total,
+          <span id="pass-count" class="text-green-600">0</span> passed,
+          <span id="fail-count" class="text-red-600">0</span> failed
+        </div>
+        <div id="status-content"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { SessionHeader, MessageEntry, isSessionHeader, isMessageEntry } from '../../src/models.js';
+
+    // Test framework
+    let tests = [];
+    let passed = 0;
+    let failed = 0;
+
+    function test(name, fn) {
+      tests.push({ name, fn });
+    }
+
+    function assert(condition, message) {
+      if (!condition) {
+        throw new Error(message);
+      }
+    }
+
+    function assertEqual(a, b, message) {
+      if (a !== b) {
+        throw new Error(`${message}: expected ${b}, got ${a}`);
+      }
+    }
+
+    function assertThrows(fn, message) {
+      try {
+        fn();
+        throw new Error(`${message}: expected function to throw`);
+      } catch (e) {
+        if (e.message === `${message}: expected function to throw`) {
+          throw e;
+        }
+      }
+    }
+
+    // SessionHeader tests
+    test('SessionHeader constructor', () => {
+      const id = 'test-id';
+      const timestamp = 1234567890;
+      const cwd = '/home/user';
+
+      const header = new SessionHeader(id, timestamp, cwd);
+
+      assertEqual(header.id, id, 'ID should match');
+      assertEqual(header.timestamp, timestamp, 'Timestamp should match');
+      assertEqual(header.cwd, cwd, 'CWD should match');
+    });
+
+    test('SessionHeader.create', () => {
+      const cwd = '/home/user/project';
+      const header = SessionHeader.create(cwd);
+
+      assert(typeof header.id === 'string', 'ID should be string');
+      assert(header.id.length > 0, 'ID should not be empty');
+      assert(typeof header.timestamp === 'number', 'Timestamp should be number');
+      assert(header.timestamp > 0, 'Timestamp should be positive');
+      assertEqual(header.cwd, cwd, 'CWD should match');
+    });
+
+    // MessageEntry tests
+    test('MessageEntry constructor', () => {
+      const id = 'msg-id';
+      const parentId = 'parent-id';
+      const role = 'user';
+      const content = 'Hello world';
+
+      const message = new MessageEntry(id, parentId, role, content);
+
+      assertEqual(message.id, id, 'ID should match');
+      assertEqual(message.parentId, parentId, 'Parent ID should match');
+      assertEqual(message.role, role, 'Role should match');
+      assertEqual(message.content, content, 'Content should match');
+    });
+
+    test('MessageEntry.create', () => {
+      const parentId = 'parent-id';
+      const role = 'assistant';
+      const content = 'Response message';
+
+      const message = MessageEntry.create(parentId, role, content);
+
+      assert(typeof message.id === 'string', 'ID should be string');
+      assert(message.id.length > 0, 'ID should not be empty');
+      assertEqual(message.parentId, parentId, 'Parent ID should match');
+      assertEqual(message.role, role, 'Role should match');
+      assertEqual(message.content, content, 'Content should match');
+    });
+
+    // Type guard tests
+    test('isSessionHeader type guard', () => {
+      const header = new SessionHeader('id', 123, '/cwd');
+      const message = new MessageEntry('id', 'parent', 'user', 'content');
+      const plain = { id: 'test' };
+
+      assert(isSessionHeader(header), 'Should identify SessionHeader');
+      assert(!isSessionHeader(message), 'Should not identify MessageEntry as SessionHeader');
+      assert(!isSessionHeader(plain), 'Should not identify plain object as SessionHeader');
+    });
+
+    test('isMessageEntry type guard', () => {
+      const header = new SessionHeader('id', 123, '/cwd');
+      const message = new MessageEntry('id', 'parent', 'user', 'content');
+      const plain = { id: 'test' };
+
+      assert(isMessageEntry(message), 'Should identify MessageEntry');
+      assert(!isMessageEntry(header), 'Should not identify SessionHeader as MessageEntry');
+      assert(!isMessageEntry(plain), 'Should not identify plain object as MessageEntry');
+    });
+
+    // Run tests
+    async function runTests() {
+      const resultsDiv = document.getElementById('test-results');
+      const statusDiv = document.getElementById('test-status');
+      const statusBadge = document.getElementById('status-badge');
+      const totalCount = document.getElementById('total-count');
+      const passCount = document.getElementById('pass-count');
+      const failCount = document.getElementById('fail-count');
+      const statusContent = document.getElementById('status-content');
+
+      totalCount.textContent = tests.length;
+
+      for (const test of tests) {
+        try {
+          await test.fn();
+          passed++;
+
+          const resultDiv = document.createElement('div');
+          resultDiv.className = 'bg-green-50 border-l-4 border-green-400 p-4';
+          resultDiv.innerHTML = `
+            <div class="flex">
+              <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                </svg>
+              </div>
+              <div class="ml-3">
+                <p class="text-sm text-green-700">${test.name}</p>
+              </div>
+            </div>
+          `;
+          resultsDiv.appendChild(resultDiv);
+
+        } catch (error) {
+          failed++;
+
+          const resultDiv = document.createElement('div');
+          resultDiv.className = 'bg-red-50 border-l-4 border-red-400 p-4';
+          resultDiv.innerHTML = `
+            <div class="flex">
+              <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                </svg>
+              </div>
+              <div class="ml-3">
+                <p class="text-sm text-red-700">${test.name}</p>
+                <p class="text-sm text-red-600 mt-1">${error.message}</p>
+              </div>
+            </div>
+          `;
+          resultsDiv.appendChild(resultDiv);
+        }
+
+        passCount.textContent = passed;
+        failCount.textContent = failed;
+      }
+
+      // Update status
+      statusDiv.classList.remove('hidden');
+
+      if (failed === 0) {
+        statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800';
+        statusBadge.textContent = 'All Passed';
+        statusContent.innerHTML = '<p class="text-green-700">All tests passed successfully!</p>';
+      } else {
+        statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800';
+        statusBadge.textContent = 'Some Failed';
+        statusContent.innerHTML = `<p class="text-red-700">${failed} test(s) failed. Check the results above.</p>`;
+      }
+    }
+
+    // Start tests
+    runTests().catch(console.error);
+  </script>
+</body>
+</html>

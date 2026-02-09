@@ -1,0 +1,33 @@
+{
+  "name": "@aardvark/session-manager",
+  "version": "1.0.0",
+  "description": "Tree-structured session management with branching conversations and persistence",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "test": "node run-tests.js",
+    "test:unit": "node run-tests.js --unit",
+    "test:integration": "node run-tests.js --integration",
+    "demo": "python -m http.server 8080",
+    "build": "echo 'No build step required for ES modules'",
+    "lint": "echo 'Linting not configured yet'"
+  },
+  "keywords": [
+    "session-management",
+    "conversation-tree",
+    "branching",
+    "persistence",
+    "indexeddb",
+    "web-worker"
+  ],
+  "author": "Aardvark Team",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {},
+  "peerDependencies": {
+    "@aardvark/session-store": "^1.0.0",
+    "@aardvark/message-bridge": "^1.0.0",
+    "@aardvark/indexeddb-provider": "^1.0.0",
+    "@aardvark/event-bus": "^1.0.0"
+  }
+}

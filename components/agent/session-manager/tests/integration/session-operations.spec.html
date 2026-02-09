@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Session Manager - Integration Tests</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <div class="max-w-4xl mx-auto p-6">
+    <header class="mb-8">
+      <h1 class="text-3xl font-bold text-gray-800 mb-2">Session Manager - Integration Tests</h1>
+      <p class="text-gray-600">Testing session management with persistence and Web Worker integration</p>
+    </header>
+
+    <div id="test-results" class="space-y-4">
+      <div class="bg-blue-50 border-l-4 border-blue-400 p-4">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+            </svg>
+          </div>
+          <div class="ml-3">
+            <p class="text-sm text-blue-700">
+              Running Session Manager integration tests...
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="test-status" class="mt-8 hidden">
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">Test Results</h2>
+        <div class="flex items-center space-x-4 mb-4">
+          <span id="status-badge" class="px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">Running...</span>
+          <span id="total-count" class="text-gray-600">0</span> total,
+          <span id="pass-count" class="text-green-600">0</span> passed,
+          <span id="fail-count" class="text-red-600">0</span> failed
+        </div>
+        <div id="status-content"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { SessionManager } from '../../src/session-manager.js';
+
+    // Mock dependencies for testing
+    class MockSessionStore {
+      constructor() {
+        this.data = new Map();
+      }
+
+      async getTree(sessionId) {
+        return this.data.get(sessionId) || [];
+      }
+
+      async saveTree(sessionId, entries) {
+        this.data.set(sessionId, entries);
+      }
+    }
+
+    class MockMessageBridge {
+      constructor() {
+        this.handlers = new Map();
+      }
+
+      on(event, handler) {
+        this.handlers.set(event, handler);
+      }
+
+      async trigger(event, data) {
+        const handler = this.handlers.get(event);
+        if (handler) {
+          return await handler(data);
+        }
+      }
+    }
+
+    // Test framework
+    let tests = [];
+    let passed = 0;
+    let failed = 0;
+
+    function test(name, fn) {
+      tests.push({ name, fn });
+    }
+
+    function assert(condition, message) {
+      if (!condition) {
+        throw new Error(message);
+      }
+    }
+
+    function assertEqual(a, b, message) {
+      if (a !== b) {
+        throw new Error(`${message}: expected ${b}, got ${a}`);
+      }
+    }
+
+    // SessionManager integration tests
+    test('SessionManager creates session with tree', async () => {
+      const mockStore = new MockSessionStore();
+      const mockBridge = new MockMessageBridge();
+      const manager = new SessionManager({
+        sessionStore: mockStore,
+        messageBridge: mockBridge
+      });
+
+      const sessionId = await manager.createSession('/test/project');
+
+      assert(typeof sessionId === 'string', 'Session ID should be string');
+      assert(sessionId.length > 0, 'Session ID should not be empty');
+
+      // Check tree was created
+      const tree = manager.activeTrees.get(sessionId);
+      assert(tree !== undefined, 'Tree should be in active trees');
+      assertEqual(tree.getRootId(), sessionId, 'Tree root should match session ID');
+
+      // Check persistence
+      const stored = await mockStore.getTree(sessionId);
+      assert(stored.length === 1, 'Should have stored root entry');
+    });
+
+    test('SessionManager appends message to session', async () => {
+      const mockStore = new MockSessionStore();
+      const mockBridge = new MockMessageBridge();
+      const manager = new SessionManager({
+        sessionStore: mockStore,
+        messageBridge: mockBridge
+      });
+
+      const sessionId = await manager.createSession();
+      const messageId = await manager.appendMessage(sessionId, 'user', 'Hello world');
+
+      assert(typeof messageId === 'string', 'Message ID should be string');
+
+      const tree = manager.activeTrees.get(sessionId);
+      const history = tree.getHistory();
+      assert(history.length === 2, 'Should have header + message');
+      assertEqual(history[1].content, 'Hello world', 'Message content should match');
+      assertEqual(history[1].role, 'user', 'Message role should match');
+    });
+
+    test('SessionManager branches conversation', async () => {
+      const mockStore = new MockSessionStore();
+      const mockBridge = new MockMessageBridge();
+      const manager = new SessionManager({
+        sessionStore: mockStore,
+        messageBridge: mockBridge
+      });
+
+      const sessionId = await manager.createSession();
+      const msg1 = await manager.appendMessage(sessionId, 'user', 'First');
+      const msg2 = await manager.appendMessage(sessionId, 'assistant', 'Response');
+
+      await manager.branch(sessionId, msg1);
+      const msg3 = await manager.appendMessage(sessionId, 'user', 'Branch message');
+
+      const tree = manager.activeTrees.get(sessionId);
+      const history = tree.getHistory();
+
+      assert(history.length === 3, 'Should have 3 entries after branch');
+      assertEqual(history[1].content, 'First', 'First message should be in history');
+      assertEqual(history[2].content, 'Branch message', 'Branch message should be last');
+    });
+
+    test('SessionManager loads session from storage', async () => {
+      const mockStore = new MockSessionStore();
+      const mockBridge = new MockMessageBridge();
+      const manager = new SessionManager({
+        sessionStore: mockStore,
+        messageBridge: mockBridge
+      });
+
+      // Pre-populate store
+      const sessionId = 'test-session';
+      const entries = [
+        { id: sessionId, timestamp: Date.now(), cwd: '/test' },
+        { id: 'msg1', parentId: sessionId, role: 'user', content: 'Test' }
+      ];
+      await mockStore.saveTree(sessionId, entries);
+
+      const tree = await manager.loadSession(sessionId);
+
+      assert(tree instanceof Object, 'Should load tree');
+      assertEqual(tree.getRootId(), sessionId, 'Root should match session ID');
+      assert(tree.hasEntry('msg1'), 'Should have loaded message');
+
+      const history = tree.getHistory();
+      assert(history.length === 2, 'Should have loaded history');
+    });
+
+    test('SessionManager message handlers work', async () => {
+      const mockStore = new MockSessionStore();
+      const mockBridge = new MockMessageBridge();
+      const manager = new SessionManager({
+        sessionStore: mockStore,
+        messageBridge: mockBridge
+      });
+
+      // Test create session handler
+      const createResult = await mockBridge.trigger('session:create', { cwd: '/test' });
+      assert(createResult.success, 'Create should succeed');
+      assert(createResult.sessionId, 'Should return session ID');
+
+      const sessionId = createResult.sessionId;
+
+      // Test append message handler
+      const appendResult = await mockBridge.trigger('session:append', {
+        sessionId,
+        role: 'user',
+        content: 'Test message'
+      });
+      assert(appendResult.success, 'Append should succeed');
+      assert(appendResult.messageId, 'Should return message ID');
+
+      // Test get history handler
+      const historyResult = await mockBridge.trigger('session:getHistory', { sessionId });
+      assert(historyResult.success, 'Get history should succeed');
+      assert(Array.isArray(historyResult.history), 'Should return history array');
+      assert(historyResult.history.length === 2, 'Should have 2 entries');
+    });
+
+    test('SessionManager handles errors gracefully', async () => {
+      const mockStore = new MockSessionStore();
+      const mockBridge = new MockMessageBridge();
+      const manager = new SessionManager({
+        sessionStore: mockStore,
+        messageBridge: mockBridge
+      });
+
+      // Test loading non-existent session
+      try {
+        await manager.loadSession('nonexistent');
+        assert(false, 'Should have thrown error');
+      } catch (error) {
+        assert(error.message.includes('not found'), 'Should throw not found error');
+      }
+
+      // Test message handler with invalid session
+      const result = await mockBridge.trigger('session:append', {
+        sessionId: 'invalid',
+        role: 'user',
+        content: 'Test'
+      });
+      assert(!result.success, 'Should fail for invalid session');
+      assert(result.error, 'Should include error message');
+    });
+
+    // Run tests
+    async function runTests() {
+      const resultsDiv = document.getElementById('test-results');
+      const statusDiv = document.getElementById('test-status');
+      const statusBadge = document.getElementById('status-badge');
+      const totalCount = document.getElementById('total-count');
+      const passCount = document.getElementById('pass-count');
+      const failCount = document.getElementById('fail-count');
+      const statusContent = document.getElementById('status-content');
+
+      totalCount.textContent = tests.length;
+
+      for (const test of tests) {
+        try {
+          await test.fn();
+          passed++;
+
+          const resultDiv = document.createElement('div');
+          resultDiv.className = 'bg-green-50 border-l-4 border-green-400 p-4';
+          resultDiv.innerHTML = `
+            <div class="flex">
+              <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                </svg>
+              </div>
+              <div class="ml-3">
+                <p class="text-sm text-green-700">${test.name}</p>
+              </div>
+            </div>
+          `;
+          resultsDiv.appendChild(resultDiv);
+
+        } catch (error) {
+          failed++;
+
+          const resultDiv = document.createElement('div');
+          resultDiv.className = 'bg-red-50 border-l-4 border-red-400 p-4';
+          resultDiv.innerHTML = `
+            <div class="flex">
+              <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                </svg>
+              </div>
+              <div class="ml-3">
+                <p class="text-sm text-red-700">${test.name}</p>
+                <p class="text-sm text-red-600 mt-1">${error.message}</p>
+              </div>
+            </div>
+          `;
+          resultsDiv.appendChild(resultDiv);
+        }
+
+        passCount.textContent = passed;
+        failCount.textContent = failed;
+      }
+
+      // Update status
+      statusDiv.classList.remove('hidden');
+
+      if (failed === 0) {
+        statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800';
+        statusBadge.textContent = 'All Passed';
+        statusContent.innerHTML = '<p class="text-green-700">All tests passed successfully!</p>';
+      } else {
+        statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800';
+        statusBadge.textContent = 'Some Failed';
+        statusContent.innerHTML = `<p class="text-red-700">${failed} test(s) failed. Check the results above.</p>`;
+      }
+    }
+
+    // Start tests
+    runTests().catch(console.error);
+  </script>
+</body>
+</html>

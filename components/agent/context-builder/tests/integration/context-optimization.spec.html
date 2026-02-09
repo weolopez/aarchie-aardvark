@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Context Optimization - Integration Tests</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .test-result { transition: all 0.3s ease; }
+    .test-passed { background-color: #d1fae5; border-color: #10b981; }
+    .test-failed { background-color: #fee2e2; border-color: #ef4444; }
+  </style>
+</head>
+<body class="bg-gray-50 p-8">
+  <div class="max-w-4xl mx-auto">
+    <h1 class="text-3xl font-bold text-gray-800 mb-8">Context Optimization - Integration Tests</h1>
+
+    <div id="test-status" class="bg-white rounded-lg shadow-md p-6 mb-8">
+      <div class="flex items-center justify-between">
+        <h2 class="text-xl font-semibold text-gray-800">Test Results</h2>
+        <div class="flex items-center space-x-4">
+          <span id="status-badge" class="px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">Running...</span>
+          <span id="total-count" class="text-gray-600">0</span> total,
+          <span id="pass-count" class="text-green-600">0</span> passed,
+          <span id="fail-count" class="text-red-600">0</span> failed
+        </div>
+      </div>
+    </div>
+
+    <div id="test-results" class="space-y-4"></div>
+  </div>
+
+  <script type="module">
+    import { ContextBuilder } from '../../src/context-builder.js';
+
+    // Mock dependencies with realistic data
+    class MockToolRegistry {
+      constructor() {
+        this.tools = [
+          {
+            name: 'calculator',
+            description: 'Perform mathematical calculations and operations',
+            functions: [
+              { name: 'add', description: 'Add two or more numbers' },
+              { name: 'multiply', description: 'Multiply two numbers' },
+              { name: 'divide', description: 'Divide two numbers' }
+            ],
+            permissions: ['math', 'calculation']
+          },
+          {
+            name: 'text_processor',
+            description: 'Process and manipulate text content',
+            functions: [
+              { name: 'uppercase', description: 'Convert text to uppercase' },
+              { name: 'lowercase', description: 'Convert text to lowercase' },
+              { name: 'search', description: 'Search for patterns in text' }
+            ],
+            permissions: ['text', 'string']
+          },
+          {
+            name: 'data_analyzer',
+            description: 'Analyze and process data structures',
+            functions: [
+              { name: 'parse_json', description: 'Parse JSON data' },
+              { name: 'filter', description: 'Filter data arrays' },
+              { name: 'sort', description: 'Sort data collections' }
+            ],
+            permissions: ['data', 'json']
+          }
+        ];
+      }
+
+      async getAllTools() {
+        return this.tools;
+      }
+    }
+
+    class MockSessionManager {
+      constructor() {
+        this.sessions = new Map();
+      }
+
+      async getTree(sessionId) {
+        return this.sessions.get(sessionId) || null;
+      }
+
+      createMockTree(messages = []) {
+        return {
+          getHistory: () => messages
+        };
+      }
+    }
+
+    // Test framework
+    let tests = [];
+    let passed = 0;
+    let failed = 0;
+
+    function test(name, fn) {
+      tests.push({ name, fn });
+    }
+
+    function assert(condition, message) {
+      if (!condition) {
+        throw new Error(message);
+      }
+    }
+
+    function assertEqual(a, b, message) {
+      if (a !== b) {
+        throw new Error(`${message}: expected ${b}, got ${a}`);
+      }
+    }
+
+    // Integration tests
+    test('Full context building workflow', async () => {
+      const toolRegistry = new MockToolRegistry();
+      const sessionManager = new MockSessionManager();
+      const contextBuilder = new ContextBuilder(toolRegistry, sessionManager);
+
+      // Create mock session tree
+      const messages = [
+        { role: 'user', content: 'I need to calculate 2 + 3 and convert "hello" to uppercase' },
+        { role: 'assistant', content: 'I can help with both math and text operations.' }
+      ];
+      const mockTree = sessionManager.createMockTree(messages);
+      sessionManager.sessions.set('test-session', mockTree);
+
+      // Build context
+      const context = await contextBuilder.buildContext('test-session', 'Now multiply the result by 4');
+
+      assert(context.sessionId === 'test-session', 'Should include session ID');
+      assert(context.prompt, 'Should have prompt');
+      assert(context.relevantTools, 'Should have relevant tools');
+      assert(context.contextStats, 'Should have context stats');
+      assert(context.prompt.messages.length >= 3, 'Should have system + history + user messages');
+      assert(context.prompt.tokenUsage, 'Should have token usage');
+    });
+
+    test('Tool relevance integration', async () => {
+      const toolRegistry = new MockToolRegistry();
+      const sessionManager = new MockSessionManager();
+      const contextBuilder = new ContextBuilder(toolRegistry, sessionManager);
+
+      // Test math query
+      const mathQuery = 'calculate 15 divided by 3';
+      const mockTree = sessionManager.createMockTree([]);
+      sessionManager.sessions.set('math-session', mockTree);
+
+      const context = await contextBuilder.buildContext('math-session', mathQuery);
+
+      assert(context.relevantTools.length > 0, 'Should find relevant tools for math query');
+      assert(context.relevantTools.some(item => item.tool.name === 'calculator'), 'Should include calculator tool');
+    });
+
+    test('Text processing tool relevance', async () => {
+      const toolRegistry = new MockToolRegistry();
+      const sessionManager = new MockSessionManager();
+      const contextBuilder = new ContextBuilder(toolRegistry, sessionManager);
+
+      // Test text query
+      const textQuery = 'convert this text to uppercase and search for patterns';
+      const mockTree = sessionManager.createMockTree([]);
+      sessionManager.sessions.set('text-session', mockTree);
+
+      const context = await contextBuilder.buildContext('text-session', textQuery);
+
+      assert(context.relevantTools.length > 0, 'Should find relevant tools for text query');
+      assert(context.relevantTools.some(item => item.tool.name === 'text_processor'), 'Should include text processor tool');
+    });
+
+    test('Conversation optimization integration', async () => {
+      const toolRegistry = new MockToolRegistry();
+      const sessionManager = new MockSessionManager();
+      const contextBuilder = new ContextBuilder(toolRegistry, sessionManager);
+
+      // Create long conversation
+      const longConversation = [];
+      for (let i = 0; i < 20; i++) {
+        longConversation.push({
+          role: i % 2 === 0 ? 'user' : 'assistant',
+          content: `Message ${i + 1}: This is a conversation message with some content. `.repeat(5)
+        });
+      }
+
+      const mockTree = sessionManager.createMockTree(longConversation);
+      sessionManager.sessions.set('long-session', mockTree);
+
+      const optimized = await contextBuilder.optimizeConversation('long-session', 2000);
+
+      assert(Array.isArray(optimized), 'Should return optimized conversation');
+      assert(optimized.length <= longConversation.length, 'Should not exceed original length');
+      // Token estimation should be reasonable
+      const totalTokens = optimized.reduce((sum, msg) => sum + contextBuilder.promptBuilder.estimateTokens(msg), 0);
+      assert(totalTokens < 2500, 'Should stay under token limit with buffer');
+    });
+
+    test('Context window management', async () => {
+      const toolRegistry = new MockToolRegistry();
+      const sessionManager = new MockSessionManager();
+      const contextBuilder = new ContextBuilder(toolRegistry, sessionManager);
+
+      const sessionId = 'window-test';
+
+      // Add multiple interactions
+      const interactions = [
+        [{ role: 'user', content: 'First message' }, { role: 'assistant', content: 'First response' }],
+        [{ role: 'user', content: 'Second message' }, { role: 'assistant', content: 'Second response' }],
+        [{ role: 'user', content: 'Third message' }, { role: 'assistant', content: 'Third response' }]
+      ];
+
+      for (const messages of interactions) {
+        await contextBuilder.contextManager.updateContextWindow(sessionId, messages, 1000);
+      }
+
+      const currentContext = contextBuilder.getCurrentContext(sessionId);
+      const stats = contextBuilder.getContextStats(sessionId);
+
+      assert(currentContext.length === 6, 'Should contain all messages');
+      assert(stats.messageCount === 6, 'Should count all messages');
+      assert(stats.tokenCount > 0, 'Should have token count');
+    });
+
+    test('Context cleanup integration', async () => {
+      const toolRegistry = new MockToolRegistry();
+      const sessionManager = new MockSessionManager();
+      const contextBuilder = new ContextBuilder(toolRegistry, sessionManager);
+
+      // Create sessions with different ages
+      const now = Date.now();
+      const oldSession = 'old-session';
+      const newSession = 'new-session';
+
+      // Simulate old session
+      const oldWindow = contextBuilder.contextManager.getContextWindow(oldSession);
+      oldWindow.lastUpdated = now - 7200000; // 2 hours ago
+      oldWindow.messages = [{ role: 'user', content: 'old message' }];
+
+      // Create new session
+      contextBuilder.getCurrentContext(newSession);
+
+      const cleaned = contextBuilder.cleanupOldContexts(3600000); // 1 hour max age
+
+      assert(cleaned === 1, 'Should clean up 1 old session');
+      assert(contextBuilder.getActiveSessions().length === 1, 'Should have 1 active session');
+      assert(contextBuilder.getActiveSessions()[0] === newSession, 'Should keep new session');
+    });
+
+    test('End-to-end context building with tool selection', async () => {
+      const toolRegistry = new MockToolRegistry();
+      const sessionManager = new MockSessionManager();
+      const contextBuilder = new ContextBuilder(toolRegistry, sessionManager);
+
+      // Complex query that should match multiple tools
+      const complexQuery = 'Parse this JSON data, calculate some statistics, and format the results as uppercase text';
+      const mockTree = sessionManager.createMockTree([
+        { role: 'user', content: 'I have some data to process' },
+        { role: 'assistant', content: 'I can help with data processing and calculations.' }
+      ]);
+      sessionManager.sessions.set('complex-session', mockTree);
+
+      const context = await contextBuilder.buildContext('complex-session', complexQuery);
+
+      // Should find multiple relevant tools
+      const toolNames = context.relevantTools.map(item => item.tool.name);
+      assert(toolNames.includes('data_analyzer') || toolNames.includes('calculator') || toolNames.includes('text_processor'),
+             'Should find relevant tools for complex query');
+
+      // Should have proper prompt structure
+      assert(context.prompt.messages[0].role === 'system', 'First message should be system');
+      assert(context.prompt.messages[context.prompt.messages.length - 1].role === 'user', 'Last message should be user');
+
+      // Should have reasonable token usage
+      assert(context.prompt.tokenUsage.current < context.prompt.tokenUsage.limit, 'Should be under token limit');
+    });
+
+    // Run tests
+    async function runTests() {
+      const resultsDiv = document.getElementById('test-results');
+      const statusDiv = document.getElementById('test-status');
+      const statusBadge = document.getElementById('status-badge');
+      const totalCount = document.getElementById('total-count');
+      const passCount = document.getElementById('pass-count');
+      const failCount = document.getElementById('fail-count');
+
+      totalCount.textContent = tests.length;
+
+      for (const test of tests) {
+        try {
+          await test.fn();
+          passed++;
+
+          const resultDiv = document.createElement('div');
+          resultDiv.className = 'bg-green-50 border-l-4 border-green-400 p-4 test-result test-passed';
+          resultDiv.innerHTML = `
+            <div class="flex">
+              <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                </svg>
+              </div>
+              <div class="ml-3">
+                <p class="text-sm text-green-700 font-medium">${test.name}</p>
+              </div>
+            </div>
+          `;
+          resultsDiv.appendChild(resultDiv);
+
+        } catch (error) {
+          failed++;
+
+          const resultDiv = document.createElement('div');
+          resultDiv.className = 'bg-red-50 border-l-4 border-red-400 p-4 test-result test-failed';
+          resultDiv.innerHTML = `
+            <div class="flex">
+              <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                </svg>
+              </div>
+              <div class="ml-3">
+                <p class="text-sm text-red-700 font-medium">${test.name}</p>
+                <p class="text-sm text-red-600 mt-1">${error.message}</p>
+              </div>
+            </div>
+          `;
+          resultsDiv.appendChild(resultDiv);
+        }
+
+        passCount.textContent = passed;
+        failCount.textContent = failed;
+      }
+
+      // Update status
+      statusDiv.classList.remove('hidden');
+
+      if (failed === 0) {
+        statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-blue-800';
+        statusBadge.textContent = 'All Passed';
+      } else {
+        statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800';
+        statusBadge.textContent = 'Some Failed';
+      }
+    }
+
+    // Start tests
+    runTests().catch(console.error);
+  </script>
+</body>
+</html>

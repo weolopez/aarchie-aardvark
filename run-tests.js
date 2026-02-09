@@ -4,14 +4,26 @@
  * Runs all browser-based tests using Playwright
  */
 
-const { chromium } = require('playwright');
-const http = require('http');
-const fs = require('fs');
-const path = require('path');
+import { chromium } from 'playwright';
+import http from 'http';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Test files to run
 const testFiles = [
-  'components/agent/agent-core/tests/unit/llm-client.spec.html'
+  'components/agent/agent-core/tests/unit/llm-client.spec.html',
+  'components/agent/session-manager/tests/unit/models.spec.html',
+  'components/agent/session-manager/tests/unit/session-tree.spec.html',
+  'components/agent/session-manager/tests/integration/session-operations.spec.html',
+  'components/agent/context-builder/tests/unit/tool-analyzer.spec.html',
+  'components/agent/context-builder/tests/unit/conversation-optimizer.spec.html',
+  'components/agent/context-builder/tests/unit/prompt-builder.spec.html',
+  'components/agent/context-builder/tests/unit/context-manager.spec.html',
+  'components/agent/context-builder/tests/unit/context-builder.spec.html',
+  'components/agent/context-builder/tests/integration/context-optimization.spec.html'
 ];
 
 const results = [];

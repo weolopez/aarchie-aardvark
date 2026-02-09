@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Context Builder Demo</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+  <div class="max-w-6xl mx-auto p-8">
+    <header class="mb-8">
+      <h1 class="text-4xl font-bold text-gray-800 mb-2">Context Builder Demo</h1>
+      <p class="text-gray-600">Intelligent context optimization for tool-driven agent conversations</p>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <!-- Input Section -->
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-2xl font-semibold text-gray-800 mb-4">Context Building</h2>
+
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Session ID</label>
+            <input type="text" id="session-id" value="demo-session" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">User Query</label>
+            <textarea id="user-query" rows="4" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter your query...">I need to calculate the sum of numbers and convert some text to uppercase</textarea>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Token Limit</label>
+            <input type="number" id="token-limit" value="4000" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+
+          <button id="build-context" class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            Build Context
+          </button>
+        </div>
+      </div>
+
+      <!-- Results Section -->
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-2xl font-semibold text-gray-800 mb-4">Results</h2>
+
+        <div id="results" class="space-y-4">
+          <div class="text-gray-500 text-center py-8">
+            Click "Build Context" to see results
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Conversation History -->
+    <div class="mt-8 bg-white rounded-lg shadow-md p-6">
+      <h2 class="text-2xl font-semibold text-gray-800 mb-4">Conversation History</h2>
+      <div id="conversation-history" class="space-y-2 max-h-64 overflow-y-auto">
+        <div class="text-gray-500 text-center py-4">
+          No conversation history yet
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { ContextBuilder } from '../../../../components/agent/context-builder/src/context-builder.js';
+
+    // Mock dependencies
+    class MockToolRegistry {
+      constructor() {
+        this.tools = [
+          {
+            name: 'calculator',
+            description: 'Perform mathematical calculations and operations',
+            functions: [
+              { name: 'add', description: 'Add two or more numbers' },
+              { name: 'multiply', description: 'Multiply two numbers' },
+              { name: 'divide', description: 'Divide two numbers' }
+            ],
+            permissions: ['math', 'calculation']
+          },
+          {
+            name: 'text_processor',
+            description: 'Process and manipulate text content',
+            functions: [
+              { name: 'uppercase', description: 'Convert text to uppercase' },
+              { name: 'lowercase', description: 'Convert text to lowercase' },
+              { name: 'search', description: 'Search for patterns in text' }
+            ],
+            permissions: ['text', 'string']
+          },
+          {
+            name: 'data_analyzer',
+            description: 'Analyze and process data structures',
+            functions: [
+              { name: 'parse_json', description: 'Parse JSON data' },
+              { name: 'filter', description: 'Filter data arrays' },
+              { name: 'sort', description: 'Sort data collections' }
+            ],
+            permissions: ['data', 'json']
+          }
+        ];
+      }
+
+      async getAllTools() {
+        return this.tools;
+      }
+    }
+
+    class MockSessionManager {
+      constructor() {
+        this.sessions = new Map();
+      }
+
+      async getTree(sessionId) {
+        return this.sessions.get(sessionId) || null;
+      }
+
+      createMockTree(messages = []) {
+        return {
+          getHistory: () => messages
+        };
+      }
+    }
+
+    // Initialize components
+    const toolRegistry = new MockToolRegistry();
+    const sessionManager = new MockSessionManager();
+    const contextBuilder = new ContextBuilder(toolRegistry, sessionManager);
+
+    // DOM elements
+    const sessionIdInput = document.getElementById('session-id');
+    const userQueryInput = document.getElementById('user-query');
+    const tokenLimitInput = document.getElementById('token-limit');
+    const buildContextBtn = document.getElementById('build-context');
+    const resultsDiv = document.getElementById('results');
+    const conversationHistoryDiv = document.getElementById('conversation-history');
+
+    // Conversation history storage
+    const conversationHistory = new Map();
+
+    function addToHistory(sessionId, role, content) {
+      if (!conversationHistory.has(sessionId)) {
+        conversationHistory.set(sessionId, []);
+      }
+      conversationHistory.get(sessionId).push({ role, content, timestamp: new Date() });
+      updateHistoryDisplay(sessionId);
+    }
+
+    function updateHistoryDisplay(sessionId) {
+      const history = conversationHistory.get(sessionId) || [];
+      if (history.length === 0) {
+        conversationHistoryDiv.innerHTML = '<div class="text-gray-500 text-center py-4">No conversation history yet</div>';
+        return;
+      }
+
+      conversationHistoryDiv.innerHTML = history.map(msg => `
+        <div class="flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}">
+          <div class="max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+            msg.role === 'user'
+              ? 'bg-blue-500 text-white'
+              : 'bg-gray-200 text-gray-800'
+          }">
+            <div class="text-sm font-medium">${msg.role === 'user' ? 'You' : 'Assistant'}</div>
+            <div class="text-sm">${msg.content}</div>
+            <div class="text-xs opacity-75 mt-1">${msg.timestamp.toLocaleTimeString()}</div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function displayResults(context) {
+      resultsDiv.innerHTML = `
+        <div class="space-y-4">
+          <div class="bg-blue-50 border-l-4 border-blue-400 p-4">
+            <div class="flex">
+              <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+                </svg>
+              </div>
+              <div class="ml-3">
+                <p class="text-sm text-blue-700 font-medium">Context Built Successfully</p>
+                <p class="text-sm text-blue-600">Session: ${context.sessionId}</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-4">
+            <div class="bg-gray-50 p-4 rounded-lg">
+              <h3 class="font-medium text-gray-800 mb-2">Token Usage</h3>
+              <div class="text-2xl font-bold text-blue-600">${context.prompt.tokenUsage.current}</div>
+              <div class="text-sm text-gray-600">of ${context.prompt.tokenUsage.limit} tokens</div>
+              <div class="w-full bg-gray-200 rounded-full h-2 mt-2">
+                <div class="bg-blue-600 h-2 rounded-full" style="width: ${(context.prompt.tokenUsage.current / context.prompt.tokenUsage.limit) * 100}%"></div>
+              </div>
+            </div>
+
+            <div class="bg-gray-50 p-4 rounded-lg">
+              <h3 class="font-medium text-gray-800 mb-2">Relevant Tools</h3>
+              <div class="text-2xl font-bold text-green-600">${context.relevantTools.length}</div>
+              <div class="text-sm text-gray-600">tools matched</div>
+            </div>
+          </div>
+
+          <div class="bg-gray-50 p-4 rounded-lg">
+            <h3 class="font-medium text-gray-800 mb-2">Matched Tools</h3>
+            <div class="flex flex-wrap gap-2">
+              ${context.relevantTools.map(tool => `
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                  ${tool.name}
+                </span>
+              `).join('')}
+            </div>
+          </div>
+
+          <div class="bg-gray-50 p-4 rounded-lg">
+            <h3 class="font-medium text-gray-800 mb-2">Context Stats</h3>
+            <div class="grid grid-cols-3 gap-4 text-sm">
+              <div>
+                <div class="font-medium text-gray-800">Messages</div>
+                <div class="text-gray-600">${context.contextStats.messageCount}</div>
+              </div>
+              <div>
+                <div class="font-medium text-gray-800">Tokens</div>
+                <div class="text-gray-600">${context.contextStats.tokenCount}</div>
+              </div>
+              <div>
+                <div class="font-medium text-gray-800">Tools</div>
+                <div class="text-gray-600">${context.contextStats.toolCount}</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-gray-50 p-4 rounded-lg">
+            <h3 class="font-medium text-gray-800 mb-2">Generated Prompt</h3>
+            <div class="bg-white border rounded p-3 text-sm font-mono max-h-48 overflow-y-auto">
+              ${context.prompt.messages.map(msg => `
+                <div class="mb-2">
+                  <span class="font-bold ${msg.role === 'system' ? 'text-blue-600' : msg.role === 'user' ? 'text-green-600' : 'text-purple-600'}">
+                    ${msg.role.toUpperCase()}:
+                  </span>
+                  ${msg.content}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // Event listeners
+    buildContextBtn.addEventListener('click', async () => {
+      const sessionId = sessionIdInput.value;
+      const userQuery = userQueryInput.value;
+      const tokenLimit = parseInt(tokenLimitInput.value);
+
+      if (!userQuery.trim()) {
+        alert('Please enter a user query');
+        return;
+      }
+
+      try {
+        buildContextBtn.disabled = true;
+        buildContextBtn.textContent = 'Building Context...';
+
+        // Add user query to history
+        addToHistory(sessionId, 'user', userQuery);
+
+        // Create mock conversation tree
+        const existingHistory = conversationHistory.get(sessionId) || [];
+        const mockTree = sessionManager.createMockTree(existingHistory);
+        sessionManager.sessions.set(sessionId, mockTree);
+
+        // Build context
+        const context = await contextBuilder.buildContext(sessionId, userQuery, tokenLimit);
+
+        // Add assistant response to history (simulated)
+        addToHistory(sessionId, 'assistant', 'I understand your request. Let me help you with that.');
+
+        // Display results
+        displayResults(context);
+
+      } catch (error) {
+        console.error('Error building context:', error);
+        resultsDiv.innerHTML = `
+          <div class="bg-red-50 border-l-4 border-red-400 p-4">
+            <div class="flex">
+              <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                </svg>
+              </div>
+              <div class="ml-3">
+                <p class="text-sm text-red-700 font-medium">Error Building Context</p>
+                <p class="text-sm text-red-600 mt-1">${error.message}</p>
+              </div>
+            </div>
+          </div>
+        `;
+      } finally {
+        buildContextBtn.disabled = false;
+        buildContextBtn.textContent = 'Build Context';
+      }
+    });
+
+    // Initialize with empty state
+    updateHistoryDisplay(sessionIdInput.value);
+  </script>
+</body>
+</html>

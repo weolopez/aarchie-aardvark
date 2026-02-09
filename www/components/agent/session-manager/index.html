@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Session Manager - Interactive Demo</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    .node {
+      cursor: pointer;
+    }
+
+    .node circle {
+      fill: #fff;
+      stroke: steelblue;
+      stroke-width: 3px;
+    }
+
+    .node text {
+      font: 12px sans-serif;
+    }
+
+    .link {
+      fill: none;
+      stroke: #ccc;
+      stroke-width: 2px;
+    }
+
+    .session-header {
+      fill: #4f46e5;
+    }
+
+    .user-message {
+      fill: #059669;
+    }
+
+    .assistant-message {
+      fill: #dc2626;
+    }
+
+    .system-message {
+      fill: #7c3aed;
+    }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+  <div class="max-w-7xl mx-auto p-6">
+    <header class="mb-8">
+      <h1 class="text-3xl font-bold text-gray-800 mb-2">Session Manager - Interactive Demo</h1>
+      <p class="text-gray-600">Experience tree-structured conversations with branching capabilities</p>
+      <div class="mt-4 flex space-x-4">
+        <button
+          id="run-demo"
+          class="bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
+        >
+          🚀 Run Full Demo
+        </button>
+        <button
+          id="reset-demo"
+          class="bg-gray-600 text-white px-6 py-2 rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500"
+        >
+          🔄 Reset
+        </button>
+      </div>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <!-- Control Panel -->
+      <div class="space-y-6">
+        <!-- Session Management -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <h2 class="text-xl font-semibold text-gray-800 mb-4">Session Management</h2>
+
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Current Working Directory</label>
+              <input
+                id="cwd-input"
+                type="text"
+                value="/home/user/project"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+            </div>
+
+            <div class="flex space-x-2">
+              <button
+                id="create-session"
+                class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                Create Session
+              </button>
+              <button
+                id="clear-session"
+                class="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 disabled:opacity-50"
+                disabled
+              >
+                Clear
+              </button>
+            </div>
+
+            <div id="session-info" class="text-sm text-gray-600 hidden">
+              <p><strong>Session ID:</strong> <span id="session-id"></span></p>
+              <p><strong>Messages:</strong> <span id="message-count">0</span></p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Message Input -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <h2 class="text-xl font-semibold text-gray-800 mb-4">Add Message</h2>
+
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Role</label>
+              <select
+                id="role-select"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled
+              >
+                <option value="user">User</option>
+                <option value="assistant">Assistant</option>
+                <option value="system">System</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Content</label>
+              <textarea
+                id="content-input"
+                rows="3"
+                placeholder="Enter message content..."
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled
+              ></textarea>
+            </div>
+
+            <button
+              id="add-message"
+              class="w-full bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50"
+              disabled
+            >
+              Add Message
+            </button>
+          </div>
+        </div>
+
+        <!-- Branching -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <h2 class="text-xl font-semibold text-gray-800 mb-4">Branching</h2>
+
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Branch from Entry</label>
+              <select
+                id="branch-select"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled
+              >
+                <option value="">Select entry to branch from...</option>
+              </select>
+            </div>
+
+            <button
+              id="branch-button"
+              class="w-full bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50"
+              disabled
+            >
+              Create Branch
+            </button>
+          </div>
+        </div>
+
+        <!-- History -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+          <h2 class="text-xl font-semibold text-gray-800 mb-4">Current History</h2>
+
+          <div id="history-list" class="space-y-2 max-h-64 overflow-y-auto">
+            <div class="text-sm text-gray-500">No session created yet</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tree Visualization -->
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">Session Tree</h2>
+
+        <div class="border border-gray-200 rounded-md p-4">
+          <svg id="tree-svg" width="100%" height="600" class="border border-gray-100 rounded"></svg>
+        </div>
+
+        <div class="mt-4 text-sm text-gray-600">
+          <p><strong>Legend:</strong></p>
+          <div class="flex items-center space-x-4 mt-2">
+            <div class="flex items-center">
+              <div class="w-4 h-4 bg-blue-600 rounded mr-2"></div>
+              <span>Session Header</span>
+            </div>
+            <div class="flex items-center">
+              <div class="w-4 h-4 bg-green-600 rounded mr-2"></div>
+              <span>User Message</span>
+            </div>
+            <div class="flex items-center">
+              <div class="w-4 h-4 bg-red-600 rounded mr-2"></div>
+              <span>Assistant Message</span>
+            </div>
+            <div class="flex items-center">
+              <div class="w-4 h-4 bg-purple-600 rounded mr-2"></div>
+              <span>System Message</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status -->
+    <div class="mt-8 bg-white rounded-lg shadow-md p-6">
+      <h2 class="text-xl font-semibold text-gray-800 mb-4">Status</h2>
+      <div id="status-log" class="space-y-2 max-h-32 overflow-y-auto font-mono text-sm bg-gray-900 text-green-400 p-4 rounded-md">
+        <div>Session Manager Demo initialized</div>
+        <div>Create a session to begin...</div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { SessionTree } from '/components/agent/session-manager/src/session-tree.js';
+    import { SessionHeader, MessageEntry } from '/components/agent/session-manager/src/models.js';
+
+    // Demo state
+    let currentSession = null;
+    let currentTree = null;
+
+    // DOM elements
+    const cwdInput = document.getElementById('cwd-input');
+    const createSessionBtn = document.getElementById('create-session');
+    const clearSessionBtn = document.getElementById('clear-session');
+    const sessionInfo = document.getElementById('session-info');
+    const sessionIdSpan = document.getElementById('session-id');
+    const messageCountSpan = document.getElementById('message-count');
+    const roleSelect = document.getElementById('role-select');
+    const contentInput = document.getElementById('content-input');
+    const addMessageBtn = document.getElementById('add-message');
+    const branchSelect = document.getElementById('branch-select');
+    const branchButton = document.getElementById('branch-button');
+    const historyList = document.getElementById('history-list');
+    const treeSvg = document.getElementById('tree-svg');
+    const statusLog = document.getElementById('status-log');
+
+    // Logging function
+    function log(message, type = 'info') {
+      const timestamp = new Date().toLocaleTimeString();
+      const colorClass = type === 'error' ? 'text-red-400' :
+                        type === 'success' ? 'text-green-400' :
+                        type === 'warning' ? 'text-yellow-400' : 'text-blue-400';
+      statusLog.innerHTML += `<div class="${colorClass}">[${timestamp}] ${message}</div>`;
+      statusLog.scrollTop = statusLog.scrollHeight;
+    }
+
+    // Create new session
+    createSessionBtn.addEventListener('click', () => {
+      const cwd = cwdInput.value.trim() || '/home/user/project';
+
+      currentTree = new SessionTree(cwd);
+      currentSession = currentTree.getRootId();
+
+      // Update UI
+      sessionIdSpan.textContent = currentSession;
+      sessionInfo.classList.remove('hidden');
+      updateMessageCount();
+      updateHistory();
+      updateBranchSelect();
+      updateTreeVisualization();
+
+      // Enable controls
+      roleSelect.disabled = false;
+      contentInput.disabled = false;
+      addMessageBtn.disabled = false;
+      branchSelect.disabled = false;
+      branchButton.disabled = false;
+      clearSessionBtn.disabled = false;
+
+      log(`Created session: ${currentSession}`, 'success');
+    });
+
+    // Clear session
+    clearSessionBtn.addEventListener('click', () => {
+      currentSession = null;
+      currentTree = null;
+
+      // Reset UI
+      sessionInfo.classList.add('hidden');
+      historyList.innerHTML = '<div class="text-sm text-gray-500">No session created yet</div>';
+      branchSelect.innerHTML = '<option value="">Select entry to branch from...</option>';
+      updateTreeVisualization();
+
+      // Disable controls
+      roleSelect.disabled = true;
+      contentInput.disabled = true;
+      addMessageBtn.disabled = true;
+      branchSelect.disabled = true;
+      branchButton.disabled = true;
+      clearSessionBtn.disabled = true;
+
+      log('Session cleared');
+    });
+
+    // Add message
+    addMessageBtn.addEventListener('click', () => {
+      if (!currentTree) return;
+
+      const role = roleSelect.value;
+      const content = contentInput.value.trim();
+
+      if (!content) {
+        log('Please enter message content', 'warning');
+        return;
+      }
+
+      currentTree.appendMessage(role, content);
+      contentInput.value = '';
+
+      updateMessageCount();
+      updateHistory();
+      updateBranchSelect();
+      updateTreeVisualization();
+
+      log(`Added ${role} message`, 'success');
+    });
+
+    // Branch
+    branchButton.addEventListener('click', () => {
+      if (!currentTree) return;
+
+      const entryId = branchSelect.value;
+      if (!entryId) {
+        log('Please select an entry to branch from', 'warning');
+        return;
+      }
+
+      currentTree.branch(entryId);
+      updateHistory();
+      updateTreeVisualization();
+
+      log(`Branched from entry: ${entryId}`, 'success');
+    });
+
+    // Update message count
+    function updateMessageCount() {
+      if (!currentTree) return;
+
+      const entries = currentTree.getAllEntries();
+      const messageCount = entries.filter(entry => entry instanceof MessageEntry).length;
+      messageCountSpan.textContent = messageCount;
+    }
+
+    // Update history display
+    function updateHistory() {
+      if (!currentTree) return;
+
+      const history = currentTree.getHistory();
+      historyList.innerHTML = '';
+
+      if (history.length === 0) {
+        historyList.innerHTML = '<div class="text-sm text-gray-500">No history available</div>';
+        return;
+      }
+
+      history.forEach((entry, index) => {
+        const entryDiv = document.createElement('div');
+        entryDiv.className = 'p-2 bg-gray-50 rounded border text-sm';
+
+        let typeLabel = '';
+        let content = '';
+
+        if (entry instanceof SessionHeader) {
+          typeLabel = 'Session';
+          content = `Started in ${entry.cwd}`;
+        } else if (entry instanceof MessageEntry) {
+          typeLabel = entry.role.charAt(0).toUpperCase() + entry.role.slice(1);
+          content = entry.content;
+        }
+
+        entryDiv.innerHTML = `
+          <div class="flex justify-between items-start">
+            <div>
+              <span class="font-medium text-gray-800">${typeLabel}</span>
+              <span class="text-gray-500">(${entry.id.slice(0, 8)}...)</span>
+            </div>
+            <span class="text-xs text-gray-400">#${index + 1}</span>
+          </div>
+          <div class="text-gray-700 mt-1">${content}</div>
+        `;
+
+        historyList.appendChild(entryDiv);
+      });
+    }
+
+    // Update branch select
+    function updateBranchSelect() {
+      if (!currentTree) return;
+
+      const entries = currentTree.getAllEntries();
+      branchSelect.innerHTML = '<option value="">Select entry to branch from...</option>';
+
+      entries.forEach(entry => {
+        const option = document.createElement('option');
+        option.value = entry.id;
+
+        let label = '';
+        if (entry instanceof SessionHeader) {
+          label = `Session (${entry.cwd})`;
+        } else if (entry instanceof MessageEntry) {
+          label = `${entry.role}: ${entry.content.slice(0, 30)}${entry.content.length > 30 ? '...' : ''}`;
+        }
+
+        option.textContent = label;
+        branchSelect.appendChild(option);
+      });
+    }
+
+    // Update tree visualization
+    function updateTreeVisualization() {
+      // Clear existing
+      d3.select('#tree-svg').selectAll('*').remove();
+
+      if (!currentTree) {
+        return;
+      }
+
+      const entries = currentTree.getAllEntries();
+
+      // Create hierarchical data
+      const nodeMap = new Map();
+      entries.forEach(entry => {
+        nodeMap.set(entry.id, {
+          id: entry.id,
+          parentId: entry.parentId,
+          name: entry instanceof SessionHeader ? 'Session' :
+                entry instanceof MessageEntry ? `${entry.role}: ${entry.content.slice(0, 20)}...` : 'Unknown',
+          type: entry instanceof SessionHeader ? 'header' :
+                entry instanceof MessageEntry ? entry.role : 'unknown'
+        });
+      });
+
+      // Build hierarchy
+      const rootNode = nodeMap.get(currentTree.getRootId());
+      if (!rootNode) return;
+
+      function buildHierarchy(node) {
+        const children = [];
+        for (const [id, child] of nodeMap) {
+          if (child.parentId === node.id) {
+            children.push(buildHierarchy(child));
+          }
+        }
+        return { ...node, children };
+      }
+
+      const hierarchy = d3.hierarchy(buildHierarchy(rootNode));
+
+      // Create tree layout
+      const width = treeSvg.clientWidth || 600;
+      const height = 500;
+      const treeLayout = d3.tree().size([width - 100, height - 100]);
+
+      treeLayout(hierarchy);
+
+      // Create SVG elements
+      const svg = d3.select('#tree-svg')
+        .attr('width', width)
+        .attr('height', height);
+
+      const g = svg.append('g')
+        .attr('transform', 'translate(50, 50)');
+
+      // Add links
+      g.selectAll('.link')
+        .data(hierarchy.links())
+        .enter().append('path')
+        .attr('class', 'link')
+        .attr('d', d3.linkVertical()
+          .x(d => d.x)
+          .y(d => d.y));
+
+      // Add nodes
+      const nodes = g.selectAll('.node')
+        .data(hierarchy.descendants())
+        .enter().append('g')
+        .attr('class', 'node')
+        .attr('transform', d => `translate(${d.x},${d.y})`);
+
+      nodes.append('circle')
+        .attr('r', 8)
+        .attr('class', d => {
+          if (d.data.type === 'header') return 'session-header';
+          if (d.data.type === 'user') return 'user-message';
+          if (d.data.type === 'assistant') return 'assistant-message';
+          if (d.data.type === 'system') return 'system-message';
+          return '';
+        });
+
+      nodes.append('text')
+        .attr('dy', 20)
+        .attr('text-anchor', 'middle')
+        .text(d => d.data.name)
+        .style('font-size', '10px')
+        .style('fill', '#666');
+
+      // Add click handler for branching
+      nodes.on('click', (event, d) => {
+        if (d.data.id !== currentTree.getLeafId()) {
+          currentTree.branch(d.data.id);
+          updateHistory();
+          updateTreeVisualization();
+          log(`Branched to: ${d.data.id}`, 'success');
+        }
+      });
+    }
+
+    // Demo state
+    let isDemoRunning = false;
+
+    // DOM elements for demo
+    const runDemoBtn = document.getElementById('run-demo');
+    const resetDemoBtn = document.getElementById('reset-demo');
+
+    // Run full demo
+    runDemoBtn.addEventListener('click', async () => {
+      if (isDemoRunning) return;
+
+      isDemoRunning = true;
+      runDemoBtn.disabled = true;
+      runDemoBtn.textContent = '🎬 Running Demo...';
+
+      log('🚀 Starting full Session Manager demo...', 'success');
+
+      try {
+        // Step 1: Create session
+        await demoStep('Creating new session...', async () => {
+          cwdInput.value = '/home/user/coding-project';
+          createSessionBtn.click();
+        });
+
+        await sleep(1000);
+
+        // Step 2: Add initial conversation
+        await demoStep('Adding initial user message...', async () => {
+          roleSelect.value = 'user';
+          contentInput.value = 'Help me build a React todo app';
+          addMessageBtn.click();
+        });
+
+        await sleep(1000);
+
+        await demoStep('Adding assistant response...', async () => {
+          roleSelect.value = 'assistant';
+          contentInput.value = 'I can help you build a React todo app! What features would you like?';
+          addMessageBtn.click();
+        });
+
+        await sleep(1000);
+
+        // Step 3: Branch the conversation
+        await demoStep('Branching conversation to explore different features...', async () => {
+          const entries = currentTree.getAllEntries();
+          const userMessage = entries.find(e => e instanceof MessageEntry && e.role === 'user');
+          if (userMessage) {
+            branchSelect.value = userMessage.id;
+            branchButton.click();
+          }
+        });
+
+        await sleep(1000);
+
+        // Step 4: Add alternative conversation path
+        await demoStep('Adding alternative user request...', async () => {
+          roleSelect.value = 'user';
+          contentInput.value = 'Actually, let me try a Vue.js version instead';
+          addMessageBtn.click();
+        });
+
+        await sleep(1000);
+
+        await demoStep('Adding response for Vue.js path...', async () => {
+          roleSelect.value = 'assistant';
+          contentInput.value = 'Great! Vue.js is also excellent for todo apps. Let me show you how to set it up.';
+          addMessageBtn.click();
+        });
+
+        await sleep(1000);
+
+        // Step 5: Branch back and explore another path
+        await demoStep('Branching back to explore CRUD features...', async () => {
+          const entries = currentTree.getAllEntries();
+          const assistantMessage = entries.find(e => e instanceof MessageEntry && e.role === 'assistant' && e.content.includes('React'));
+          if (assistantMessage) {
+            branchSelect.value = assistantMessage.id;
+            branchButton.click();
+          }
+        });
+
+        await sleep(1000);
+
+        await demoStep('Adding CRUD-focused conversation...', async () => {
+          roleSelect.value = 'user';
+          contentInput.value = 'Focus on the CRUD operations - add, edit, delete todos';
+          addMessageBtn.click();
+        });
+
+        await sleep(1000);
+
+        await demoStep('Adding detailed CRUD response...', async () => {
+          roleSelect.value = 'assistant';
+          contentInput.value = 'Perfect! For CRUD operations, we\'ll need state management, form handling, and list rendering. Let me walk you through each operation.';
+          addMessageBtn.click();
+        });
+
+        await sleep(1000);
+
+        // Step 6: Add system message
+        await demoStep('Adding system context...', async () => {
+          roleSelect.value = 'system';
+          contentInput.value = 'User is working on a modern web application with React/Vue.js';
+          addMessageBtn.click();
+        });
+
+        await sleep(1000);
+
+        // Demo complete
+        log('✅ Full demo completed! You can now explore the tree structure.', 'success');
+        log('💡 Try clicking on different nodes in the tree to branch conversations.', 'info');
+
+      } catch (error) {
+        log(`❌ Demo failed: ${error.message}`, 'error');
+      } finally {
+        isDemoRunning = false;
+        runDemoBtn.disabled = false;
+        runDemoBtn.textContent = '🚀 Run Full Demo';
+      }
+    });
+
+    // Reset demo
+    resetDemoBtn.addEventListener('click', () => {
+      if (isDemoRunning) return;
+
+      clearSessionBtn.click();
+      log('🔄 Demo reset. Ready to start again!', 'info');
+    });
+
+    // Helper function for demo steps
+    async function demoStep(description, action) {
+      log(`🎬 ${description}`, 'info');
+      await action();
+      await sleep(500); // Brief pause for UI updates
+    }
+
+    // Sleep helper
+    function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // Initialize
+    log('Session Manager Demo loaded');
+    log('Click "🚀 Run Full Demo" to see all capabilities automatically');
+    log('Or use the interactive controls to explore manually');
+  </script>
+</body>
+</html>

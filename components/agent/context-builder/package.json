@@ -1,0 +1,10 @@
+{
+  "name": "context-builder",
+  "version": "1.0.0",
+  "description": "Context Builder - Tool & Conversation Context Optimization",
+  "main": "src/index.js",
+  "type": "module",
+  "keywords": ["context", "optimization", "agent", "tool"],
+  "author": "",
+  "license": "ISC"
+}
