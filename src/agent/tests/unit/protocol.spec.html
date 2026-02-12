@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Protocol Message Handling - Unit Tests</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <div class="max-w-4xl mx-auto p-6">
+     <header class="mb-8">
+       <h1 class="text-3xl font-bold text-gray-800 mb-2">Protocol Message Handling - Unit Tests</h1>
+       <p class="text-gray-600">Testing message protocol validation, init handling, chat processing, and error responses</p>
+     </header>
+
+    <div id="test-results" class="space-y-4">
+      <div class="bg-blue-50 border-l-4 border-blue-400 p-4">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+            </svg>
+          </div>
+          <div class="ml-3">
+            <p class="text-sm text-blue-700">
+              Running Protocol message handling unit tests...
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="test-status" class="mt-8 hidden">
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">Test Results</h2>
+        <div class="flex items-center space-x-4 mb-4">
+          <span id="status-badge" class="px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">Running...</span>
+          <span id="total-count" class="text-gray-600">0</span> total,
+          <span id="pass-count" class="text-green-600">0</span> passed,
+          <span id="fail-count" class="text-red-600">0</span> failed
+        </div>
+        <div id="status-content"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { Protocol } from '/src/agent/protocol.js';
+
+    // Test utilities
+    const tests = [];
+    let passed = 0;
+    let failed = 0;
+
+    function test(name, fn) {
+      tests.push({ name, fn });
+    }
+
+    function assert(condition, message) {
+      if (!condition) {
+        throw new Error(message);
+      }
+    }
+
+    function assertEqual(actual, expected, message) {
+      if (actual !== expected) {
+        throw new Error(`${message}: expected ${expected}, got ${actual}`);
+      }
+    }
+
+    // Mock Agent and Message Bridge
+    class MockAgent {
+      constructor() {
+        this.initCalls = [];
+        this.chatCalls = [];
+        this.approveToolCalls = [];
+      }
+
+      async init(config, bridge) {
+        this.initCalls.push({ config, bridge });
+      }
+
+      async chat(message, sessionId) {
+        this.chatCalls.push({ message, sessionId });
+        return { content: 'Mock response' };
+      }
+
+      approveTool(toolId, approved) {
+        this.approveToolCalls.push({ toolId, approved });
+      }
+    }
+
+    class MockMessageBridge {
+      constructor() {
+        this.messages = [];
+      }
+
+      send(type, payload) {
+        this.messages.push({ type, payload });
+      }
+
+      getLastMessage() {
+        return this.messages[this.messages.length - 1];
+      }
+
+      clear() {
+        this.messages = [];
+      }
+    }
+
+    // Test definitions
+    test('Protocol handles init messages', async () => {
+      const mockAgent = new MockAgent();
+      const mockBridge = new MockMessageBridge();
+      const mockController = { agent: mockAgent, messageBridge: mockBridge };
+      const protocol = new Protocol(mockController);
+
+      const payload = { apiKey: 'test-key', model: 'gemini-pro' };
+      await protocol.handleInit({ type: 'init', id: 'init-1', payload });
+
+      assertEqual(mockAgent.initCalls.length, 1, 'Should call agent.init once');
+      assertEqual(mockAgent.initCalls[0].config, payload, 'Should pass config to agent');
+      assertEqual(mockAgent.initCalls[0].bridge, mockBridge, 'Should pass bridge to agent');
+
+      const response = mockBridge.getLastMessage();
+      assertEqual(response.type, 'response', 'Should send response message');
+      assertEqual(response.payload.id, 'init-1', 'Should include request ID');
+      assert(response.payload.success, 'Should indicate success');
+    });
+
+    test('Protocol handles init errors', async () => {
+      const mockAgent = new MockAgent();
+      const mockBridge = new MockMessageBridge();
+      mockAgent.init = async () => { throw new Error('Init failed'); };
+      const mockController = { agent: mockAgent, messageBridge: mockBridge };
+      const protocol = new Protocol(mockController);
+
+      await protocol.handleInit({ type: 'init', id: 'init-1', payload: { apiKey: 'test' } });
+
+      const response = mockBridge.getLastMessage();
+      assertEqual(response.type, 'response', 'Should send response message');
+      assertEqual(response.payload.id, 'init-1', 'Should include request ID');
+      assert(!response.payload.success, 'Should indicate failure');
+      assertEqual(response.payload.error, 'Init failed', 'Should include error message');
+    });
+
+    test('Protocol handles chat messages', async () => {
+      const mockAgent = new MockAgent();
+      const mockBridge = new MockMessageBridge();
+      const mockController = { agent: mockAgent, messageBridge: mockBridge };
+      const protocol = new Protocol(mockController);
+
+      const payload = { message: 'Hello', sessionId: 'session-1' };
+      await protocol.handleChat({ type: 'chat', id: 'chat-1', payload });
+
+      assertEqual(mockAgent.chatCalls.length, 1, 'Should call agent.chat once');
+      assertEqual(mockAgent.chatCalls[0].message, 'Hello', 'Should pass message to agent');
+      assertEqual(mockAgent.chatCalls[0].sessionId, 'session-1', 'Should pass sessionId to agent');
+
+      const response = mockBridge.getLastMessage();
+      assertEqual(response.type, 'response', 'Should send response message');
+      assertEqual(response.payload.id, 'chat-1', 'Should include request ID');
+      assert(response.payload.success, 'Should indicate success');
+      assertEqual(response.payload.result.content, 'Mock response', 'Should include result');
+    });
+
+    test('Protocol handles chat errors', async () => {
+      const mockAgent = new MockAgent();
+      const mockBridge = new MockMessageBridge();
+      mockAgent.chat = async () => { throw new Error('Chat failed'); };
+      const mockController = { agent: mockAgent, messageBridge: mockBridge };
+      const protocol = new Protocol(mockController);
+
+      await protocol.handleChat({ type: 'chat', id: 'chat-1', payload: { message: 'test', sessionId: 'session-1' } });
+
+      const response = mockBridge.getLastMessage();
+      assertEqual(response.type, 'response', 'Should send response message');
+      assertEqual(response.payload.id, 'chat-1', 'Should include request ID');
+      assert(!response.payload.success, 'Should indicate failure');
+      assertEqual(response.payload.error, 'Chat failed', 'Should include error message');
+    });
+
+    test('Protocol handles tool approval', () => {
+      const mockAgent = new MockAgent();
+      const mockBridge = new MockMessageBridge();
+      const mockController = { agent: mockAgent, messageBridge: mockBridge };
+      const protocol = new Protocol(mockController);
+
+      const payload = { toolId: 'tool-123', approved: true };
+      protocol.handleApproveTool({ type: 'approve_tool', id: 'approve-1', payload });
+
+      assertEqual(mockAgent.approveToolCalls.length, 1, 'Should call agent.approveTool once');
+      assertEqual(mockAgent.approveToolCalls[0].toolId, 'tool-123', 'Should pass toolId to agent');
+      assert(mockAgent.approveToolCalls[0].approved, 'Should pass approved status to agent');
+    });
+
+    test('Protocol handles load repo', () => {
+      const mockAgent = new MockAgent();
+      const mockBridge = new MockMessageBridge();
+      const mockController = { agent: mockAgent, messageBridge: mockBridge };
+      const protocol = new Protocol(mockController);
+
+      const payload = { owner: 'test', repo: 'project' };
+      protocol.handleLoadRepo({ type: 'load_repo', id: 'load-1', payload });
+
+      const response = mockBridge.getLastMessage();
+      assertEqual(response.type, 'response', 'Should send response message');
+      assertEqual(response.payload.id, 'load-1', 'Should include request ID');
+      assert(response.payload.success, 'Should indicate success');
+      assertEqual(response.payload.result.message, 'Repository loading not yet implemented', 'Should include placeholder message');
+    });
+
+    // Message validation tests
+    test('Protocol validates init messages', () => {
+      const protocol = new Protocol({});
+
+      assert(() => protocol.validateMessage({
+        type: 'init',
+        id: 'test',
+        payload: { apiKey: 'key' }
+      }), 'Should accept valid init message');
+    });
+
+    test('Protocol rejects init without apiKey', () => {
+      const protocol = new Protocol({});
+
+      try {
+        protocol.validateMessage({
+          type: 'init',
+          id: 'test',
+          payload: {}
+        });
+        throw new Error('Should have thrown');
+      } catch (error) {
+        assertEqual(error.message, 'Init message must include apiKey', 'Should reject missing apiKey');
+      }
+    });
+
+    test('Protocol validates chat messages', () => {
+      const protocol = new Protocol({});
+
+      assert(() => protocol.validateMessage({
+        type: 'chat',
+        id: 'test',
+        payload: { message: 'hello', sessionId: 'session-1' }
+      }), 'Should accept valid chat message');
+    });
+
+    test('Protocol rejects chat without message', () => {
+      const protocol = new Protocol({});
+
+      try {
+        protocol.validateMessage({
+          type: 'chat',
+          id: 'test',
+          payload: { sessionId: 'session-1' }
+        });
+        throw new Error('Should have thrown');
+      } catch (error) {
+        assertEqual(error.message, 'Chat message must include message and sessionId', 'Should reject missing message');
+      }
+    });
+
+    test('Protocol validates approve_tool messages', () => {
+      const protocol = new Protocol({});
+
+      assert(() => protocol.validateMessage({
+        type: 'approve_tool',
+        id: 'test',
+        payload: { toolId: 'tool-1', approved: true }
+      }), 'Should accept valid approve_tool message');
+    });
+
+    test('Protocol rejects approve_tool without boolean approved', () => {
+      const protocol = new Protocol({});
+
+      try {
+        protocol.validateMessage({
+          type: 'approve_tool',
+          id: 'test',
+          payload: { toolId: 'tool-1', approved: 'yes' }
+        });
+        throw new Error('Should have thrown');
+      } catch (error) {
+        assertEqual(error.message, 'Approve tool message must include toolId and approved boolean', 'Should reject non-boolean approved');
+      }
+    });
+
+    test('Protocol rejects messages without type', () => {
+      const protocol = new Protocol({});
+
+      try {
+        protocol.validateMessage({ id: 'test' });
+        throw new Error('Should have thrown');
+      } catch (error) {
+        assertEqual(error.message, 'Message must have a type', 'Should reject missing type');
+      }
+    });
+
+    test('Protocol rejects messages without id', () => {
+      const protocol = new Protocol({});
+
+      try {
+        protocol.validateMessage({ type: 'init' });
+        throw new Error('Should have thrown');
+      } catch (error) {
+        assertEqual(error.message, 'Message must have an id', 'Should reject missing id');
+      }
+    });
+
+    // Test runner
+    async function runTests() {
+      const resultsDiv = document.getElementById('test-results');
+
+      for (const testCase of tests) {
+        try {
+          await testCase.fn();
+          passed++;
+          resultsDiv.innerHTML += `
+            <div class="bg-green-50 border-l-4 border-green-400 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                  </svg>
+                </div>
+                <div class="ml-3">
+                  <p class="text-sm text-green-700">
+                    <strong>${testCase.name}</strong> - Passed
+                  </p>
+                </div>
+              </div>
+            </div>
+          `;
+        } catch (error) {
+          failed++;
+          resultsDiv.innerHTML += `
+            <div class="bg-red-50 border-l-4 border-red-400 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                  </svg>
+                </div>
+                <div class="ml-3">
+                  <p class="text-sm text-red-700">
+                    <strong>${testCase.name}</strong> - Failed: ${error.message}
+                  </p>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      // Update status
+      const statusDiv = document.getElementById('test-status');
+      const statusBadge = document.getElementById('status-badge');
+      const totalCount = document.getElementById('total-count');
+      const passCount = document.getElementById('pass-count');
+      const failCount = document.getElementById('fail-count');
+      const statusContent = document.getElementById('status-content');
+
+      statusDiv.classList.remove('hidden');
+      totalCount.textContent = passed + failed;
+      passCount.textContent = passed;
+      failCount.textContent = failed;
+
+      if (failed === 0) {
+        statusBadge.textContent = 'All Tests Passed';
+        statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800';
+      } else {
+        statusBadge.textContent = 'Some Tests Failed';
+        statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800';
+      }
+
+      statusContent.innerHTML = `
+        <div class="grid grid-cols-3 gap-4 mb-4">
+          <div class="text-center">
+            <div class="text-2xl font-bold text-green-600">${passed}</div>
+            <div class="text-sm text-gray-600">Passed</div>
+          </div>
+          <div class="text-center">
+            <div class="text-2xl font-bold text-red-600">${failed}</div>
+            <div class="text-sm text-gray-600">Failed</div>
+          </div>
+          <div class="text-center">
+            <div class="text-2xl font-bold text-blue-600">${passed + failed}</div>
+            <div class="text-sm text-gray-600">Total</div>
+          </div>
+        </div>
+        ${failed === 0 ?
+          '<div class="bg-green-50 border-l-4 border-green-400 p-4"><p class="text-green-700">All tests passed! ✅</p></div>' :
+          '<div class="bg-red-50 border-l-4 border-red-400 p-4"><p class="text-red-700">Some tests failed. Please review the errors above.</p></div>'
+        }
+      `;
+    }
+
+    // Run tests when page loads
+    runTests().catch(error => {
+      console.error('Test runner failed:', error);
+      // Update UI to show failure
+      document.getElementById('test-results').innerHTML += `
+        <div class="bg-red-50 border-l-4 border-red-400 p-4">
+          <p class="text-red-700">Test runner failed: ${error.message}</p>
+        </div>
+      `;
+      // Force status update
+      const statusDiv = document.getElementById('test-status');
+      const statusBadge = document.getElementById('status-badge');
+      statusDiv.classList.remove('hidden');
+      statusBadge.textContent = 'Some Tests Failed';
+      statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800';
+    });
+  </script>
+</body>
+</html>

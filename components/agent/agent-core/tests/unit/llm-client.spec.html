@@ -45,9 +45,31 @@
   </div>
 
     <script>
-    console.log('Page loaded');
-    // Set API key immediately
-    localStorage.setItem('GEMINI_API_KEY', 'AIzaSyDtVOxqxc--DiwDNaADtIs5RRk3N4jc9g8');
+  console.log('Page loaded');
+  // Remove hardcoded API key. If running in Node, use dotenv. If browser, rely on injected env or config.
+
+  // Set mock API key for testing
+  localStorage.setItem('GEMINI_API_KEY', 'mock-api-key');
+
+  // Mock fetch for testing to avoid real API calls
+  window.originalFetch = window.fetch;
+  window.fetch = function(url, options) {
+    return Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve({
+        candidates: [{
+          content: {
+            parts: [{ text: 'Mock AI response' }]
+          }
+        }],
+        usageMetadata: {
+          promptTokenCount: 10,
+          candidatesTokenCount: 15,
+          totalTokenCount: 25
+        }
+      })
+    });
+  };
   </script>
 
   <script type="module">
@@ -84,54 +106,43 @@
 
     test('LLMClient constructor', () => {
       const client = new LLMClient({
-        apiKey: 'test-key',
+        apiKey: 'mock-api-key',
         model: 'gemini-3-flash-preview',
         maxTokens: 2048
       });
 
       assert(client instanceof LLMClient, 'Should create LLMClient instance');
-      assertEqual(client.apiKey, 'test-key', 'Should set API key');
+      assertEqual(client.apiKey, 'mock-api-key', 'Should set API key');
       assertEqual(client.model, 'gemini-3-flash-preview', 'Should set model');
       assertEqual(client.defaultMaxTokens, 2048, 'Should set max tokens');
     });
 
     test('LLMClient constructor - defaults', () => {
-      const client = new LLMClient({ apiKey: 'test-key' });
+      const client = new LLMClient({ apiKey: 'mock-api-key' });
 
       assertEqual(client.apiBaseUrl, 'https://generativelanguage.googleapis.com/v1beta', 'Should set default API URL');
       assertEqual(client.model, 'gemini-3-flash-preview', 'Should set default model');
       assertEqual(client.defaultMaxTokens, 4096, 'Should set default max tokens');
       assertEqual(client.defaultTemperature, 0.7, 'Should set default temperature');
-    });
+    });    test('LLMClient chat - basic request', async () => {
+      const client = new LLMClient({
+        apiKey: 'mock-api-key',
+        model: 'gemini-3-flash-preview'
+      });
 
-    test('LLMClient chat - basic request', async () => {
-      const client = new LLMClient({ apiKey: localStorage.getItem('GEMINI_API_KEY') });
+      const response = await client.chat({
+        messages: [{ role: 'user', content: 'Say hello in one word.' }]
+      });
 
-      try {
-        const response = await Promise.race([
-          client.chat({
-            messages: [{ role: 'user', content: 'Say hello in one word.' }]
-          }),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Request timeout')), 10000)
-          )
-        ]);
-
-        assert(response.content, 'Should return AI response');
-        assert(response.usage, 'Should include usage info');
-        assert(typeof response.usage.promptTokens === 'number', 'Should have prompt tokens');
-        assert(typeof response.usage.completionTokens === 'number', 'Should have completion tokens');
-        assert(typeof response.usage.totalTokens === 'number', 'Should have total tokens');
-      } catch (error) {
-        console.log('API call failed:', error.message);
-        // For now, just log the error instead of failing the test
-        // This allows the test suite to continue
-        assert(true, 'API call attempted (may fail due to key or network issues)');
-      }
+      assert(response.content, 'Should return AI response');
+      assert(response.usage, 'Should include usage info');
+      assert(typeof response.usage.promptTokens === 'number', 'Should have prompt tokens');
+      assert(typeof response.usage.completionTokens === 'number', 'Should have completion tokens');
+      assert(typeof response.usage.totalTokens === 'number', 'Should have total tokens');
     });
 
     test('LLMClient chat - with tools', async () => {
-      const client = new LLMClient({ apiKey: localStorage.getItem('GEMINI_API_KEY') });
+      const client = new LLMClient({ apiKey: 'mock-api-key' });
 
       const tools = [{
         type: 'function',
@@ -148,26 +159,15 @@
         }
       }];
 
-      try {
-        const response = await Promise.race([
-          client.chat({
-            messages: [{ role: 'user', content: 'What is the weather in Tokyo?' }],
-            tools: tools
-          }),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Request timeout')), 10000)
-          )
-        ]);
+      const response = await client.chat({
+        messages: [{ role: 'user', content: 'What is the weather in Tokyo?' }],
+        tools: tools
+      });
 
-        assert(response.content || response.toolCalls, 'Should return content or tool calls');
-        if (response.toolCalls) {
-          assert(Array.isArray(response.toolCalls), 'Tool calls should be array');
-          assertEqual(response.toolCalls[0].type, 'function', 'Should call function tool');
-        }
-      } catch (error) {
-        console.log('API call with tools failed:', error.message);
-        // Allow test to pass for now
-        assert(true, 'API call with tools attempted');
+      assert(response.content || response.toolCalls, 'Should return content or tool calls');
+      if (response.toolCalls) {
+        assert(Array.isArray(response.toolCalls), 'Tool calls should be array');
+        assertEqual(response.toolCalls[0].type, 'function', 'Should call function tool');
       }
     });
 

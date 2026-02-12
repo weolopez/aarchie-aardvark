@@ -9,7 +9,7 @@ export class GeminiProvider extends BaseProvider {
   constructor(config) {
     super(config);
     this.baseUrl = config.baseUrl || 'https://generativelanguage.googleapis.com/v1beta';
-    this.model = config.model || 'gemini-3-flash-preview';
+    this.model = config.model || 'gemini-2.5-flash';
   }
 
   /**
@@ -18,7 +18,10 @@ export class GeminiProvider extends BaseProvider {
    */
   _buildUrl(endpoint) {
     // URL format: https://generativelanguage.googleapis.com/v1beta/models/{model}:{endpoint}?key={apiKey}
-    return `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:${endpoint}?key=${this.apiKey}`;
+    if (!this.apiKey) {
+      throw new Error('API key is required but not provided');
+    }
+    return `${this.baseUrl}/models/${this.model}:${endpoint}?key=${this.apiKey}`;
   }
 
   /**
@@ -58,7 +61,6 @@ export class GeminiProvider extends BaseProvider {
   async streamRequest(request, onChunk) {
     return this._retryWithBackoff(async () => {
       const controller = this._createAbortController();
-      
       try {
         const response = await fetch(
           this._buildUrl('streamGenerateContent'),
@@ -72,6 +74,7 @@ export class GeminiProvider extends BaseProvider {
 
         if (!response.ok) {
           const error = await response.json().catch(() => ({ error: { message: 'Unknown error' } }));
+          console.error('[GeminiProvider] Streaming response error:', error);
           throw this._formatError(new Error(error.error?.message || `HTTP ${response.status}`), response);
         }
 
@@ -79,27 +82,23 @@ export class GeminiProvider extends BaseProvider {
         const decoder = new TextDecoder();
         let buffer = '';
 
+        // Read the entire response into buffer
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-
           buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop(); // Keep incomplete line in buffer
+        }
 
-          for (const line of lines) {
-            if (line.trim()) {
-              try {
-                const chunk = JSON.parse(line);
-                const text = this._extractTextFromChunk(chunk);
-                if (text) {
-                  onChunk(text);
-                }
-              } catch (e) {
-                // Ignore malformed JSON lines
-              }
-            }
-          }
+        // Try to parse the full buffer as JSON
+        try {
+          console.log('[GeminiProvider] Full stream buffer:', buffer);
+          const json = JSON.parse(buffer);
+          // Optionally, emit the text/content as a single chunk
+          const text = this._extractTextFromChunk(json);
+          onChunk(text);
+        } catch (e) {
+          console.error('[GeminiProvider] Malformed full stream buffer:', buffer, e);
+          onChunk('');
         }
       } finally {
         this.abortController = null;
@@ -116,14 +115,26 @@ export class GeminiProvider extends BaseProvider {
       contents: this._formatMessages(request.messages)
     };
 
+    // Add system instruction (required for Gemini API)
+    if (request.systemInstruction) {
+      formatted.systemInstruction = {
+        parts: [{ text: request.systemInstruction }]
+      };
+    } else {
+      // Default system instruction if none provided
+      formatted.systemInstruction = {
+        parts: [{ text: "You are a helpful assistant. Answer questions directly and factually." }]
+      };
+    }
+
     if (request.tools) {
       formatted.tools = this._formatTools(request.tools);
     }
 
-    if (request.temperature !== undefined) {
+    if (request.temperature !== undefined || request.maxTokens !== undefined) {
       formatted.generationConfig = {
-        temperature: request.temperature,
-        maxOutputTokens: request.maxTokens
+        temperature: request.temperature || 0.7,
+        maxOutputTokens: request.maxTokens || 4096
       };
     }
 
@@ -160,23 +171,31 @@ export class GeminiProvider extends BaseProvider {
    * @private
    */
   _formatResponse(data) {
-    const candidate = data.candidates?.[0];
-    const content = candidate?.content;
-    
+    console.log('[GeminiProvider] Raw Gemini API response:', JSON.stringify(data));
+    const candidate = data && data.candidates && data.candidates[0];
+    const content = candidate && candidate.content;
     if (!content) {
-      throw new Error('No content in response');
+      console.error('[GeminiProvider] No content in Gemini API response:', JSON.stringify(data));
+      return {
+        content: '',
+        toolCalls: undefined,
+        usage: { prompt: 0, completion: 0, total: 0 },
+        finishReason: candidate ? candidate.finishReason : undefined,
+        error: 'No content in Gemini API response'
+      };
     }
 
     const text = content.parts?.[0]?.text || '';
     const toolCalls = this._extractToolCalls(content);
-
+    // Defensive: usageMetadata may be missing
+    const usageMeta = data && data.usageMetadata ? data.usageMetadata : {};
     return {
       content: text,
       toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
       usage: {
-        prompt: data.usageMetadata?.promptTokenCount || 0,
-        completion: data.usageMetadata?.candidatesTokenCount || 0,
-        total: data.usageMetadata?.totalTokenCount || 0
+        prompt: usageMeta.promptTokenCount || 0,
+        completion: usageMeta.candidatesTokenCount || 0,
+        total: usageMeta.totalTokenCount || 0
       },
       finishReason: candidate.finishReason
     };

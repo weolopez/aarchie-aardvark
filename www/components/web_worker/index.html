@@ -1,0 +1,1387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Workbench</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg-primary: #0f1117;
+      --bg-secondary: #161b22;
+      --bg-tertiary: #1c2128;
+      --bg-hover: #21262d;
+      --border-color: #30363d;
+      --text-primary: #e6edf3;
+      --text-secondary: #7d8590;
+      --accent-blue: #58a6ff;
+      --accent-green: #238636;
+      --accent-purple: #8957e5;
+      --accent-orange: #f0883e;
+      --accent-red: #f85149;
+      --radius-sm: 6px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      height: 100vh;
+      overflow: hidden;
+      font-size: 13px;
+    }
+
+    /* Layout */
+    .app {
+      display: grid;
+      grid-template-rows: 48px 1fr auto;
+      height: 100vh;
+    }
+
+    .main-layout {
+      display: grid;
+      grid-template-columns: 260px 1fr 320px;
+      overflow: hidden;
+    }
+
+    /* Header */
+    .header {
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 16px;
+    }
+
+    .header-brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .header-brand svg {
+      width: 20px;
+      height: 20px;
+      color: var(--accent-purple);
+    }
+
+    .breadcrumbs {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-secondary);
+      font-size: 12px;
+    }
+
+    .breadcrumbs .sep {
+      color: var(--border-color);
+    }
+
+    .header-actions {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .mode-switcher {
+      display: flex;
+      background: var(--bg-tertiary);
+      border-radius: var(--radius-sm);
+      padding: 2px;
+    }
+
+    .mode-btn {
+      padding: 4px 12px;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 12px;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: all 0.15s;
+    }
+
+    .mode-btn:hover {
+      color: var(--text-primary);
+    }
+
+    .mode-btn.active {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .connection-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .connection-status:hover {
+      background: var(--bg-hover);
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+    }
+
+    .status-dot.disconnected { background: var(--accent-red); }
+    .status-dot.connecting { 
+      background: var(--accent-orange); 
+      animation: pulse 1.5s infinite;
+    }
+    .status-dot.connected { background: var(--accent-green); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* Sidebar */
+    .sidebar {
+      background: var(--bg-secondary);
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sidebar-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .sidebar-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-secondary);
+    }
+
+    .sidebar-action {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 4px;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .sidebar-action:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .session-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    /* Test Suite */
+    .test-suite {
+      border-top: 1px solid var(--border-color);
+      padding: 12px;
+      max-height: 350px;
+      overflow-y: auto;
+    }
+
+    .test-suite-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .test-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .test-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+      text-align: left;
+    }
+
+    .test-btn:hover {
+      background: var(--bg-hover);
+      border-color: var(--accent-blue);
+      color: var(--text-primary);
+    }
+
+    .test-btn.primary {
+      background: linear-gradient(135deg, var(--accent-green), #2ea043);
+      border-color: transparent;
+      color: white;
+      margin-top: 8px;
+      font-weight: 500;
+    }
+
+    .test-btn.primary:hover {
+      opacity: 0.9;
+      transform: translateY(-1px);
+    }
+
+    .test-btn.running {
+      background: rgba(88, 166, 255, 0.2);
+      border-color: var(--accent-blue);
+      color: var(--accent-blue);
+      animation: pulse 1.5s infinite;
+    }
+
+    .test-btn.success {
+      background: rgba(35, 134, 54, 0.2);
+      border-color: var(--accent-green);
+      color: var(--accent-green);
+    }
+
+    .test-btn.error {
+      background: rgba(248, 81, 73, 0.2);
+      border-color: var(--accent-red);
+      color: var(--accent-red);
+    }
+
+    .test-icon {
+      font-size: 14px;
+      width: 20px;
+      text-align: center;
+    }
+
+    .test-label {
+      flex: 1;
+    }
+
+    .session-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      margin-bottom: 2px;
+      transition: all 0.15s;
+    }
+
+    .session-item:hover {
+      background: var(--bg-hover);
+    }
+
+    .session-item.active {
+      background: rgba(88, 166, 255, 0.1);
+    }
+
+    .session-icon {
+      width: 16px;
+      height: 16px;
+      color: var(--text-secondary);
+    }
+
+    .session-item.active .session-icon {
+      color: var(--accent-blue);
+    }
+
+    .session-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .session-name {
+      font-size: 13px;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .session-meta {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    /* Main Content */
+    .content {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Empty State */
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px;
+      text-align: center;
+    }
+
+    .empty-icon {
+      width: 64px;
+      height: 64px;
+      background: linear-gradient(135deg, var(--accent-purple), var(--accent-blue));
+      border-radius: var(--radius-lg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 24px;
+    }
+
+    .empty-icon svg {
+      width: 32px;
+      height: 32px;
+      color: white;
+    }
+
+    .empty-title {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .empty-subtitle {
+      color: var(--text-secondary);
+      margin-bottom: 24px;
+      max-width: 400px;
+    }
+
+    .empty-actions {
+      display: flex;
+      gap: 12px;
+    }
+
+    /* Primary Button */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+      border: 1px solid transparent;
+    }
+
+    .btn-primary {
+      background: var(--accent-green);
+      color: white;
+      border-color: rgba(46, 160, 67, 0.4);
+    }
+
+    .btn-primary:hover {
+      background: #2ea043;
+    }
+
+    .btn-secondary {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+      border-color: var(--border-color);
+    }
+
+    .btn-secondary:hover {
+      background: var(--bg-tertiary);
+      border-color: #8b949e;
+    }
+
+    /* Chat Interface */
+    .chat-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+    }
+
+    .message {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+      animation: messageIn 0.3s ease-out;
+    }
+
+    @keyframes messageIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .message-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .message-avatar.user {
+      background: var(--accent-blue);
+      color: white;
+    }
+
+    .message-avatar.assistant {
+      background: var(--accent-purple);
+      color: white;
+    }
+
+    .message-content {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .message-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    .message-author {
+      font-weight: 600;
+      font-size: 13px;
+    }
+
+    .message-time {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .message-text {
+      color: var(--text-primary);
+      line-height: 1.6;
+      font-size: 13px;
+    }
+
+    .message-text.streaming::after {
+      content: '▋';
+      animation: blink 1s infinite;
+      color: var(--accent-blue);
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+
+    /* Input Area */
+    .input-area {
+      padding: 16px 20px;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .input-wrapper {
+      display: flex;
+      gap: 12px;
+      align-items: flex-end;
+    }
+
+    .input-field {
+      flex: 1;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 10px 14px;
+      color: var(--text-primary);
+      font-size: 13px;
+      resize: none;
+      min-height: 40px;
+      max-height: 120px;
+      font-family: inherit;
+    }
+
+    .input-field:focus {
+      outline: none;
+      border-color: var(--accent-blue);
+    }
+
+    .input-field::placeholder {
+      color: var(--text-secondary);
+    }
+
+    .input-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .icon-btn {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-hover);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .icon-btn:hover {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+    }
+
+    .icon-btn.send {
+      background: var(--accent-blue);
+      border-color: transparent;
+      color: white;
+    }
+
+    .icon-btn.send:hover {
+      background: #79c0ff;
+    }
+
+    .icon-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Inspector Panel */
+    .inspector {
+      background: var(--bg-secondary);
+      border-left: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .inspector-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .inspector-tab {
+      flex: 1;
+      padding: 10px;
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+    }
+
+    .inspector-tab:hover {
+      color: var(--text-primary);
+    }
+
+    .inspector-tab.active {
+      color: var(--text-primary);
+      border-bottom-color: var(--accent-orange);
+    }
+
+    .inspector-content {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .inspector-section {
+      padding: 16px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .inspector-section-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+    }
+
+    .detail-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+      font-size: 12px;
+    }
+
+    .detail-label {
+      color: var(--text-secondary);
+    }
+
+    .detail-value {
+      color: var(--text-primary);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+    }
+
+    .detail-value.code {
+      background: var(--bg-tertiary);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    /* Bottom Panel */
+    .bottom-panel {
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border-color);
+      height: 200px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .bottom-panel.collapsed {
+      height: 32px;
+    }
+
+    .bottom-tabs {
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .bottom-tab {
+      padding: 8px 16px;
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+    }
+
+    .bottom-tab:hover {
+      color: var(--text-primary);
+    }
+
+    .bottom-tab.active {
+      color: var(--text-primary);
+      border-bottom-color: var(--accent-blue);
+    }
+
+    .bottom-tab .badge {
+      background: var(--bg-tertiary);
+      padding: 1px 6px;
+      border-radius: 10px;
+      font-size: 10px;
+    }
+
+    .panel-controls {
+      margin-left: auto;
+      display: flex;
+      gap: 4px;
+    }
+
+    .panel-btn {
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+    }
+
+    .panel-btn:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .panel-content {
+      flex: 1;
+      overflow: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+    }
+
+    /* Timeline */
+    .timeline {
+      padding: 12px;
+    }
+
+    .timeline-item {
+      display: flex;
+      gap: 12px;
+      padding: 8px 0;
+      border-left: 2px solid var(--border-color);
+      margin-left: 8px;
+      padding-left: 12px;
+      position: relative;
+    }
+
+    .timeline-item::before {
+      content: '';
+      position: absolute;
+      left: -5px;
+      top: 12px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--bg-secondary);
+      border: 2px solid var(--border-color);
+    }
+
+    .timeline-item.success::before { border-color: var(--accent-green); }
+    .timeline-item.error::before { border-color: var(--accent-red); }
+    .timeline-item.info::before { border-color: var(--accent-blue); }
+    .timeline-item.warning::before { border-color: var(--accent-orange); }
+
+    .timeline-time {
+      color: var(--text-secondary);
+      font-size: 11px;
+      min-width: 60px;
+    }
+
+    .timeline-content {
+      color: var(--text-primary);
+    }
+
+    .timeline-meta {
+      color: var(--text-secondary);
+      font-size: 11px;
+    }
+
+    /* Network Table */
+    .network-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .network-table th,
+    .network-table td {
+      text-align: left;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border-color);
+      font-size: 12px;
+    }
+
+    .network-table th {
+      color: var(--text-secondary);
+      font-weight: 500;
+      background: var(--bg-tertiary);
+    }
+
+    .network-table tr:hover {
+      background: var(--bg-hover);
+    }
+
+    .method-badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .method-badge.post {
+      background: rgba(35, 134, 54, 0.2);
+      color: var(--accent-green);
+    }
+
+    .method-badge.get {
+      background: rgba(88, 166, 255, 0.2);
+      color: var(--accent-blue);
+    }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+    }
+
+    .modal-overlay.active {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .modal {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      width: 480px;
+      max-width: 90vw;
+      transform: scale(0.95);
+      transition: transform 0.2s;
+    }
+
+    .modal-overlay.active .modal {
+      transform: scale(1);
+    }
+
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .modal-title {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .modal-close {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 4px;
+      border-radius: var(--radius-sm);
+    }
+
+    .modal-close:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .modal-body {
+      padding: 20px;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+
+    .form-input,
+    .form-select {
+      width: 100%;
+      padding: 8px 12px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      color: var(--text-primary);
+      font-size: 13px;
+      font-family: inherit;
+    }
+
+    .form-input:focus,
+    .form-select:focus {
+      outline: none;
+      border-color: var(--accent-blue);
+    }
+
+    .modal-footer {
+      padding: 16px 20px;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+    }
+
+    /* Command Palette */
+    .command-palette {
+      position: fixed;
+      top: 20%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 560px;
+      max-width: 90vw;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      z-index: 1001;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.15s;
+    }
+
+    .command-palette.active {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .palette-input {
+      width: 100%;
+      padding: 16px 20px;
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid var(--border-color);
+      color: var(--text-primary);
+      font-size: 14px;
+      outline: none;
+    }
+
+    .palette-input::placeholder {
+      color: var(--text-secondary);
+    }
+
+    .palette-list {
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .palette-item {
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .palette-item:hover,
+    .palette-item.selected {
+      background: var(--bg-hover);
+    }
+
+    .palette-item-icon {
+      width: 20px;
+      height: 20px;
+      color: var(--text-secondary);
+    }
+
+    .palette-item-content {
+      flex: 1;
+    }
+
+    .palette-item-title {
+      color: var(--text-primary);
+      font-size: 13px;
+    }
+
+    .palette-item-subtitle {
+      color: var(--text-secondary);
+      font-size: 11px;
+    }
+
+    .palette-shortcut {
+      color: var(--text-secondary);
+      font-size: 11px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Hidden */
+    .hidden {
+      display: none !important;
+    }
+
+    /* Scrollbars */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #484f58;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-brand">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+        Agent Workbench
+      </div>
+      
+      <div class="breadcrumbs">
+        <span>Web Worker</span>
+        <span class="sep">/</span>
+        <span id="breadcrumbSession">Test Session</span>
+      </div>
+
+      <div class="header-actions">
+        <div class="mode-switcher">
+          <button class="mode-btn active" data-mode="chat">Chat</button>
+          <button class="mode-btn" data-mode="debug">Debug</button>
+          <button class="mode-btn" data-mode="test">Test</button>
+        </div>
+
+        <div class="connection-status" id="connectionStatus">
+          <div class="status-dot disconnected" id="statusDot"></div>
+          <span id="statusText">Disconnected</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Layout -->
+    <div class="main-layout">
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <span class="sidebar-title">Sessions</span>
+          <button class="sidebar-action" id="newSessionBtn" title="New Session">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+          </button>
+        </div>
+        <div class="session-list" id="sessionList">
+          <!-- Sessions will be populated here -->
+        </div>
+        
+        <!-- Test Suite Section -->
+        <div class="test-suite">
+          <div class="test-suite-header">
+            <span class="sidebar-title">Test Suite</span>
+          </div>
+          <div class="test-buttons">
+            <button class="test-btn" data-test="connectivity" title="Test basic worker connectivity">
+              <span class="test-icon">🔌</span>
+              <span class="test-label">Connectivity</span>
+            </button>
+            <button class="test-btn" data-test="streaming" title="Test streaming response handling">
+              <span class="test-icon">📡</span>
+              <span class="test-label">Streaming</span>
+            </button>
+            <button class="test-btn" data-test="conversation" title="Test multi-turn conversation">
+              <span class="test-icon">💬</span>
+              <span class="test-label">Conversation</span>
+            </button>
+            <button class="test-btn" data-test="tools" title="Test tool execution flow">
+              <span class="test-icon">🛠️</span>
+              <span class="test-label">Tools</span>
+            </button>
+            <button class="test-btn" data-test="errors" title="Test error handling">
+              <span class="test-icon">⚠️</span>
+              <span class="test-label">Errors</span>
+            </button>
+            <button class="test-btn" data-test="stress" title="Test concurrent requests">
+              <span class="test-icon">⚡</span>
+              <span class="test-label">Stress Test</span>
+            </button>
+            <button class="test-btn primary" data-test="all" title="Run all tests sequentially">
+              <span class="test-icon">🚀</span>
+              <span class="test-label">Run All Tests</span>
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Content -->
+      <main class="content" id="mainContent">
+        <!-- Empty State -->
+        <div class="empty-state" id="emptyState">
+          <div class="empty-icon">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+          </div>
+          <h2 class="empty-title">Connect to AI Agent</h2>
+          <p class="empty-subtitle">Configure your provider settings to start testing the Web Worker integration with real-time debugging tools.</p>
+          <div class="empty-actions">
+            <button class="btn btn-primary" id="connectBtn">
+              <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+              </svg>
+              Quick Connect
+            </button>
+            <button class="btn btn-secondary" id="settingsBtn">
+              <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+              </svg>
+              Settings
+            </button>
+          </div>
+        </div>
+
+        <!-- Chat Interface -->
+        <div class="chat-container hidden" id="chatContainer">
+          <!-- Messages will be inserted here -->
+        </div>
+
+        <!-- Input Area -->
+        <div class="input-area hidden" id="inputArea">
+          <div class="input-wrapper">
+            <textarea 
+              class="input-field" 
+              id="messageInput" 
+              placeholder="Send a message... (Shift+Enter for new line)"
+              rows="1"
+            ></textarea>
+            <div class="input-actions">
+              <button class="icon-btn" id="attachBtn" title="Attach file">
+                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
+                </svg>
+              </button>
+              <button class="icon-btn send" id="sendBtn" disabled title="Send message">
+                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- Inspector Panel -->
+      <aside class="inspector" id="inspectorPanel">
+        <div class="inspector-tabs">
+          <button class="inspector-tab active" data-tab="request">Request</button>
+          <button class="inspector-tab" data-tab="context">Context</button>
+        </div>
+        <div class="inspector-content" id="inspectorContent">
+          <!-- Request Tab -->
+          <div class="inspector-panel" id="requestPanel">
+            <div class="inspector-section">
+              <div class="inspector-section-title">Configuration</div>
+              <div class="detail-row">
+                <span class="detail-label">Provider</span>
+                <span class="detail-value code" id="reqProvider">-</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Model</span>
+                <span class="detail-value code" id="reqModel">-</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Temperature</span>
+                <span class="detail-value" id="reqTemp">-</span>
+              </div>
+            </div>
+            
+            <div class="inspector-section">
+              <div class="inspector-section-title">Last Request</div>
+              <div class="detail-row">
+                <span class="detail-label">Status</span>
+                <span class="detail-value" id="reqStatus">-</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Duration</span>
+                <span class="detail-value" id="reqDuration">-</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Tokens</span>
+                <span class="detail-value" id="reqTokens">-</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Context Tab -->
+          <div class="inspector-panel hidden" id="contextPanel">
+            <div class="inspector-section">
+              <div class="inspector-section-title">Worker Status</div>
+              <div class="detail-row">
+                <span class="detail-label">State</span>
+                <span class="detail-value" id="ctxState">-</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Messages</span>
+                <span class="detail-value" id="ctxMessages">0</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Pending</span>
+                <span class="detail-value" id="ctxPending">0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- Bottom Panel -->
+    <div class="bottom-panel collapsed" id="bottomPanel">
+      <div class="bottom-tabs">
+        <button class="bottom-tab active" data-panel="timeline">
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          Timeline
+          <span class="badge" id="timelineBadge">0</span>
+        </button>
+        <button class="bottom-tab" data-panel="network">
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+          </svg>
+          Network
+          <span class="badge" id="networkBadge">0</span>
+        </button>
+        <button class="bottom-tab" data-panel="console">
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3-3 3 3m0 6l-3 3-3-3"/>
+          </svg>
+          Console
+        </button>
+        
+        <div class="panel-controls">
+          <button class="panel-btn" id="clearLogsBtn" title="Clear logs">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+          </button>
+          <button class="panel-btn" id="togglePanelBtn" title="Toggle panel">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      
+      <div class="panel-content" id="panelContent">
+        <!-- Timeline Panel -->
+        <div class="panel-view" id="timelineView">
+          <div class="timeline" id="timelineList">
+            <!-- Timeline items -->
+          </div>
+        </div>
+
+        <!-- Network Panel -->
+        <div class="panel-view hidden" id="networkView">
+          <table class="network-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Size</th>
+              </tr>
+            </thead>
+            <tbody id="networkTableBody">
+              <!-- Network requests -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Console Panel -->
+        <div class="panel-view hidden" id="consoleView">
+          <div class="timeline" id="consoleList">
+            <!-- Console logs -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div class="modal-overlay" id="settingsModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title">Connection Settings</h3>
+        <button class="modal-close" id="closeSettings">
+          <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">API Key</label>
+          <input type="password" class="form-input" id="modalApiKey" placeholder="Enter your API key">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Provider</label>
+          <select class="form-select" id="modalProvider">
+            <option value="gemini">Google Gemini</option>
+            <option value="openai">OpenAI</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Model</label>
+          <select class="form-select" id="modalModel">
+            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+            <option value="gemini-3-flash">Gemini 3 Flash</option>
+            <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+            <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+            <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+            <option value="gpt-4">GPT-4</option>
+            <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Temperature</label>
+          <input type="number" class="form-input" id="modalTemp" value="0.7" min="0" max="2" step="0.1">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelSettings">Cancel</button>
+        <button class="btn btn-primary" id="saveSettings">Save & Connect</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Command Palette -->
+  <div class="command-palette" id="commandPalette">
+    <input type="text" class="palette-input" id="paletteInput" placeholder="Type a command...">
+    <div class="palette-list" id="paletteList">
+      <!-- Commands -->
+    </div>
+  </div>
+
+  <script type="module">
+    import { AgentWorkbench } from './workbench.js';
+    const app = new AgentWorkbench();
+    app.init();
+  </script>
+</body>
+</html>

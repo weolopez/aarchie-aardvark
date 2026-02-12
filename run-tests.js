@@ -12,8 +12,16 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Parse command line arguments
+const args = process.argv.slice(2);
+const grepArg = args.find(arg => arg.startsWith('--grep='));
+const grepPattern = grepArg ? grepArg.split('=')[1] : (args.includes('--grep') ? args[args.indexOf('--grep') + 1] : null);
+
 // Test files to run
-const testFiles = [
+const allTestFiles = [
+  'components/core/api-client/tests/unit/api-client.spec.html',
+  'components/core/message-bridge/tests/unit/message-bridge.spec.html',
+  'components/core/event-bus/tests/unit/event-bus.spec.html',
   'components/agent/agent-core/tests/unit/llm-client.spec.html',
   'components/agent/session-manager/tests/unit/models.spec.html',
   'components/agent/session-manager/tests/unit/session-tree.spec.html',
@@ -23,8 +31,15 @@ const testFiles = [
   'components/agent/context-builder/tests/unit/prompt-builder.spec.html',
   'components/agent/context-builder/tests/unit/context-manager.spec.html',
   'components/agent/context-builder/tests/unit/context-builder.spec.html',
-  'components/agent/context-builder/tests/integration/context-optimization.spec.html'
+  'components/agent/context-builder/tests/integration/context-optimization.spec.html',
+  'src/agent/tests/unit/agent.spec.html',
+  'src/agent/tests/unit/protocol.spec.html',
+  'tests/integration/web-worker/web-worker-messaging.spec.html'
 ];
+
+const testFiles = grepPattern 
+  ? allTestFiles.filter(file => file.includes(grepPattern))
+  : allTestFiles;
 
 const results = [];
 
@@ -68,16 +83,28 @@ async function runTest(browser, testPath, baseUrl) {
   const context = await browser.newContext();
   const page = await context.newPage();
   
-  // Set API key in localStorage for LLM tests
-  if (process.env.GEMINI_API_KEY) {
-    await page.addInitScript((apiKey) => {
-      localStorage.setItem('GEMINI_API_KEY', apiKey);
-    }, process.env.GEMINI_API_KEY);
-  }
+  // Set API key and model variables in localStorage for LLM tests
+  const envVars = {
+    'GEMINI_API_KEY': process.env.GEMINI_API_KEY,
+    'GEMINI_MODEL': process.env.GEMINI_MODEL,
+    'GEMINI_URL': process.env.GEMINI_URL
+  };
+
+  await page.addInitScript((vars) => {
+    for (const [key, value] of Object.entries(vars)) {
+      if (value) {
+        localStorage.setItem(key, value);
+      }
+    }
+  }, envVars);
   
   // Listen for console messages
   page.on('console', msg => {
     console.log(`  CONSOLE: ${msg.text()}`);
+  });
+
+  page.on('pageerror', err => {
+    console.log(`  PAGE ERROR: ${err.message}`);
   });
 
   // Navigate to test page

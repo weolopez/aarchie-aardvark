@@ -29,7 +29,8 @@ export class ConversationOptimizer {
     let tokenCount = 0;
 
     // Reserve tokens for system prompt and current message
-    const reservedTokens = 1000;
+    // Use 20% of maxTokens for reserved, but no more than 1000
+    const reservedTokens = Math.min(1000, Math.floor(maxTokens * 0.2));
     const availableTokens = maxTokens - reservedTokens;
 
     // Process messages from most recent to oldest
@@ -134,10 +135,11 @@ export class ConversationOptimizer {
    * @returns {number} Estimated token count
    */
   estimateTokens(message) {
-    if (!message || !message.content) return 0;
+    if (!message) return 0;
+    const content = message.content || '';
 
     // Rough estimation: ~4 characters per token
-    const contentTokens = Math.ceil(message.content.length / 4);
+    const contentTokens = Math.ceil(content.length / 4);
 
     // Add overhead for role and metadata
     return contentTokens + 10;

@@ -7,10 +7,11 @@
 export class AgentConfig {
   constructor(options = {}) {
     this.apiKey = options.apiKey;
-    this.apiBaseUrl = options.apiBaseUrl || 'https://generativelanguage.googleapis.com/v1';
-    this.model = options.model || 'gemini-pro';
+    this.apiBaseUrl = options.apiBaseUrl || 'https://generativelanguage.googleapis.com/v1beta';
+    this.model = options.model || 'gemini-2.5-flash';
     this.maxTokens = options.maxTokens || 4096;
     this.temperature = options.temperature || 0.7;
+    this.systemInstruction = options.systemInstruction || "You are a helpful AI assistant. Answer questions directly and factually.";
     this.defaultPermissions = options.defaultPermissions || ['fs', 'network', 'ui'];
     this.timeout = options.timeout || 30000;
     this.streaming = options.streaming !== false; // Default to true
@@ -42,7 +43,7 @@ export class AgentConfig {
     }
 
     // Validate model
-    const validModels = ['gemini-pro'];
+    const validModels = ['gemini-3-flash-preview', 'gemini-1.5-pro', 'gemini-1.0-pro'];
     if (config.model && !validModels.includes(config.model)) {
       console.warn(`Unknown model '${config.model}'. Valid models: ${validModels.join(', ')}`);
     }
@@ -96,10 +97,11 @@ export class AgentConfig {
   static getDefault() {
     return new AgentConfig({
       apiKey: 'sk-test-key-for-development',
-      apiBaseUrl: 'https://generativelanguage.googleapis.com/v1',
-      model: 'gemini-pro',
+      apiBaseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      model: 'gemini-2.5-flash',
       maxTokens: 2048,
       temperature: 0.7,
+      systemInstruction: "You are a helpful AI assistant. Answer questions directly and factually.",
       defaultPermissions: ['fs', 'network', 'ui'],
       timeout: 30000,
       streaming: true,

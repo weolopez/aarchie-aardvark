@@ -6,11 +6,25 @@
  */
 
 export class LLMClient {
-  constructor(config) {
+  constructor(config = {}) {
     this.config = config;
-    this.apiBaseUrl = config.apiBaseUrl || 'https://generativelanguage.googleapis.com/v1';
-    this.model = config.model || 'gemini-pro';
-    this.apiKey = config.apiKey || localStorage.getItem('GEMINI_API_KEY');
+    
+    // Fallback logic for environment variables in both Node and Browser
+    const getEnv = (key, defaultValue) => {
+      if (typeof process !== 'undefined' && process.env && process.env[key]) {
+        return process.env[key];
+      }
+      if (typeof localStorage !== 'undefined') {
+        const value = localStorage.getItem(key);
+        if (value) return value;
+      }
+      return defaultValue;
+    };
+
+    // Use environment variables if available
+    this.apiBaseUrl = config.apiBaseUrl !== undefined ? config.apiBaseUrl : getEnv('GEMINI_URL', 'https://generativelanguage.googleapis.com/v1beta');
+    this.model = config.model !== undefined ? config.model : getEnv('GEMINI_MODEL', 'gemini-2.5-flash');
+    this.apiKey = config.apiKey !== undefined ? config.apiKey : getEnv('GEMINI_API_KEY');
     this.defaultMaxTokens = config.maxTokens || 4096;
     this.defaultTemperature = config.temperature || 0.7;
   }
@@ -29,13 +43,17 @@ export class LLMClient {
       messages,
       tools = [],
       temperature = this.defaultTemperature,
-      maxTokens = this.defaultMaxTokens
+      maxTokens = this.defaultMaxTokens,
+      systemInstruction
     } = options;
 
-    const url = `${this.apiBaseUrl}/models/${this.model}:generateContent?key=${this.apiKey}`;
+  const url = `${this.apiBaseUrl}/models/${this.model}:generateContent?key=${this.apiKey}`;
 
     const requestBody = {
       contents: this._formatMessagesForGemini(messages),
+      systemInstruction: {
+        parts: [{ text: systemInstruction || "You are a helpful assistant. Answer questions directly and factually." }]
+      },
       generationConfig: {
         temperature,
         maxOutputTokens: maxTokens
@@ -81,28 +99,31 @@ export class LLMClient {
       messages,
       tools = [],
       temperature = this.defaultTemperature,
-      maxTokens = this.defaultMaxTokens
+      maxTokens = this.defaultMaxTokens,
+      systemInstruction
     } = options;
 
     const requestBody = {
-      model: this.model,
-      messages: this._formatMessages(messages),
-      temperature,
-      max_tokens: maxTokens,
-      stream: true
+      contents: this._formatMessagesForGemini(messages),
+      systemInstruction: {
+        parts: [{ text: systemInstruction || "You are a helpful assistant. Answer questions directly and factually." }]
+      },
+      generationConfig: {
+        temperature,
+        maxOutputTokens: maxTokens
+      }
     };
 
     if (tools.length > 0) {
-      requestBody.tools = tools;
-      requestBody.tool_choice = 'auto';
+      requestBody.tools = this._formatToolsForGemini(tools);
     }
 
+    // Gemini streaming endpoint is not used here, but if needed, update to use env URL
     try {
-      const response = await fetch(`${this.apiBaseUrl}/chat/completions`, {
+      const response = await fetch(`${this.apiBaseUrl}/models/${this.model}:streamGenerateContent?key=${this.apiKey}`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify(requestBody)
       });
@@ -177,17 +198,26 @@ export class LLMClient {
    * @returns {ChatResponse} Parsed response
    */
   _parseGeminiResponse(data) {
-    const candidate = data.candidates[0];
+
+    console.log('[LLMClient] Raw Gemini API response:', JSON.stringify(data));
+    const candidate = data && data.candidates && data.candidates[0];
     if (!candidate) {
-      throw new Error('No response candidates received from Gemini API');
+      console.error('[LLMClient] No response candidates received from Gemini API:', JSON.stringify(data));
+      return {
+        content: '',
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        error: 'No response candidates received from Gemini API'
+      };
     }
 
+    // Defensive: usageMetadata may be missing
+    const usageMeta = data && data.usageMetadata ? data.usageMetadata : {};
     const response = {
       content: '',
       usage: {
-        promptTokens: data.usageMetadata?.promptTokenCount || 0,
-        completionTokens: data.usageMetadata?.candidatesTokenCount || 0,
-        totalTokens: data.usageMetadata?.totalTokenCount || 0
+        promptTokens: usageMeta.promptTokenCount || 0,
+        completionTokens: usageMeta.candidatesTokenCount || 0,
+        totalTokens: usageMeta.totalTokenCount || 0
       }
     };
 
@@ -329,7 +359,7 @@ export class LLMClient {
    * @returns {boolean} True if API key is set
    */
   isConfigured() {
-    return Boolean(this.apiKey);
+  return Boolean(this.apiKey);
   }
 
   /**
@@ -338,7 +368,7 @@ export class LLMClient {
    */
   getAvailableModels() {
     return [
-      'gemini-pro'
+      this.model
     ];
   }
 }

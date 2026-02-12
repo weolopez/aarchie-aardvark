@@ -43,6 +43,7 @@ export class APIClient {
    * @param {Object} request - Request parameters
    * @param {Array} request.messages - Array of message objects {role, content}
    * @param {Array} [request.tools] - Array of tool definitions
+   * @param {string} [request.systemInstruction] - System instruction for the model
    * @param {number} [request.temperature] - Temperature (0-1)
    * @param {number} [request.maxTokens] - Maximum tokens to generate
    * @returns {Promise<Object>} - Response object

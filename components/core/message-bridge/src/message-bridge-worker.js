@@ -72,6 +72,15 @@ export class MessageBridgeWorker {
     
     console.log('[MessageBridgeWorker] Bridge started');
   }
+
+  /**
+   * Send a message to the main thread
+   * @param {string} eventName - The event name
+   * @param {any} data - The message data
+   */
+  send(eventName, data) {
+    this._sendToMain(eventName, data);
+  }
   
   /**
    * Notify main thread that worker is ready
@@ -90,14 +99,12 @@ export class MessageBridgeWorker {
   _handleMessage(event) {
     const { type, event: eventName, data } = event.data;
     
-    switch (type) {
-      case 'bridge-message':
-        this._handleBridgeMessage(eventName, data);
-        break;
-        
-      default:
-        // Unknown message type - can be handled by subclass or ignored
-        break;
+    if (type === 'bridge-message') {
+      this._handleBridgeMessage(eventName, data);
+    } else if (type) {
+      // Fallback: handle raw messages where type is the event name
+      // and the entire data object is the event payload
+      this._handleBridgeMessage(type, event.data);
     }
   }
   

@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent API Client Integration - Unit Tests</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <div class="max-w-4xl mx-auto p-6">
+     <header class="mb-8">
+       <h1 class="text-3xl font-bold text-gray-800 mb-2">Agent API Client Integration - Unit Tests</h1>
+       <p class="text-gray-600">Testing Agent initialization, API Client integration, streaming responses, and error handling</p>
+     </header>
+
+    <div id="test-results" class="space-y-4">
+      <div class="bg-blue-50 border-l-4 border-blue-400 p-4">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+            </svg>
+          </div>
+          <div class="ml-3">
+            <p class="text-sm text-blue-700">
+              Running Agent API Client integration unit tests...
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="test-status" class="mt-8 hidden">
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">Test Results</h2>
+        <div class="flex items-center space-x-4 mb-4">
+          <span id="status-badge" class="px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">Running...</span>
+          <span id="total-count" class="text-gray-600">0</span> total,
+          <span id="pass-count" class="text-green-600">0</span> passed,
+          <span id="fail-count" class="text-red-600">0</span> failed
+        </div>
+        <div id="status-content"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { Agent } from '/src/agent/agent.js';
+
+    // Test utilities
+    const tests = [];
+    let passed = 0;
+    let failed = 0;
+
+    function test(name, fn) {
+      tests.push({ name, fn });
+    }
+
+    function assert(condition, message) {
+      if (!condition) {
+        throw new Error(message);
+      }
+    }
+
+    function assertEqual(actual, expected, message) {
+      if (actual !== expected) {
+        throw new Error(`${message}: expected ${expected}, got ${actual}`);
+      }
+    }
+
+    // Mock Message Bridge
+    class MockMessageBridge {
+      constructor() {
+        this.messages = [];
+      }
+
+      send(type, payload) {
+        this.messages.push({ type, payload });
+      }
+
+      getLastMessage() {
+        return this.messages[this.messages.length - 1];
+      }
+
+      clear() {
+        this.messages = [];
+      }
+    }
+
+    // Test definitions
+    test('Agent initializes with config', async () => {
+      const agent = new Agent();
+      const mockBridge = new MockMessageBridge();
+      const config = {
+        apiKey: 'test-key',
+        model: 'gemini-pro',
+        provider: 'gemini',
+        temperature: 0.8
+      };
+
+      await agent.init(config, mockBridge);
+
+      assertEqual(agent.config, config, 'Should store config');
+      assert(agent.apiClient, 'Should initialize API client');
+      assertEqual(agent.messageBridge, mockBridge, 'Should store message bridge');
+    });
+
+    test('Agent handles streaming responses', async () => {
+      const agent = new Agent();
+      const mockBridge = new MockMessageBridge();
+      const config = { apiKey: 'test-key', model: 'gemini-pro' };
+
+      await agent.init(config, mockBridge);
+
+      // Mock the API client's streamRequest method
+      const originalStreamRequest = agent.apiClient.streamRequest;
+      agent.apiClient.streamRequest = async (request, onChunk) => {
+        onChunk('Hello');
+        onChunk(' world');
+        onChunk('!');
+        return {
+          content: 'Hello world!',
+          usage: { prompt: 10, completion: 15, total: 25 }
+        };
+      };
+
+      await agent.chat('Test message', 'session-1');
+
+      // Check that streaming chunks were sent
+      const messages = mockBridge.messages;
+      assert(messages.length >= 4, 'Should send multiple messages');
+
+      // Check streaming chunks
+      assertEqual(messages[0].type, 'step', 'First message should be step');
+      assertEqual(messages[0].payload.content, 'Hello', 'First chunk should be "Hello"');
+      assertEqual(messages[0].payload.sessionId, 'session-1', 'Should include sessionId');
+      assert(!messages[0].payload.done, 'First chunks should not be done');
+
+      // Check completion message
+      const lastMessage = messages[messages.length - 1];
+      assertEqual(lastMessage.type, 'step', 'Last message should be step');
+      assertEqual(lastMessage.payload.content, '', 'Completion content should be empty');
+      assert(lastMessage.payload.done, 'Last message should be done');
+      assertEqual(lastMessage.payload.usage.total, 25, 'Should include usage stats');
+
+      // Restore original method
+      agent.apiClient.streamRequest = originalStreamRequest;
+    });
+
+    test('Agent handles API errors', async () => {
+      const agent = new Agent();
+      const mockBridge = new MockMessageBridge();
+      const config = { apiKey: 'test-key', model: 'gemini-pro' };
+
+      await agent.init(config, mockBridge);
+
+      // Mock API error
+      const originalStreamRequest = agent.apiClient.streamRequest;
+      agent.apiClient.streamRequest = async () => {
+        throw new Error('API Error');
+      };
+
+      await assert(await agent.chat('Test', 'session-1').catch(() => true), 'Should reject on API error');
+
+      // Check error message was sent
+      const messages = mockBridge.messages;
+      assert(messages.length > 0, 'Should send error message');
+      const errorMessage = messages.find(m => m.type === 'error');
+      assert(errorMessage, 'Should send error message');
+      assertEqual(errorMessage.payload.message, 'LLM request failed', 'Should send correct error message');
+      assertEqual(errorMessage.payload.details, 'API Error', 'Should include error details');
+
+      // Restore original method
+      agent.apiClient.streamRequest = originalStreamRequest;
+    });
+
+    test('Agent approves tools', () => {
+      const agent = new Agent();
+      const mockBridge = new MockMessageBridge();
+      agent.messageBridge = mockBridge;
+
+      agent.approveTool('tool-123', true);
+
+      const message = mockBridge.getLastMessage();
+      assertEqual(message.type, 'tool_result', 'Should send tool_result message');
+      assertEqual(message.payload.toolId, 'tool-123', 'Should include tool ID');
+      assert(message.payload.approved, 'Should indicate approval');
+      assertEqual(message.payload.result, 'Tool execution approved', 'Should include approval message');
+    });
+
+    test('Agent denies tools', () => {
+      const agent = new Agent();
+      const mockBridge = new MockMessageBridge();
+      agent.messageBridge = mockBridge;
+
+      agent.approveTool('tool-456', false);
+
+      const message = mockBridge.getLastMessage();
+      assertEqual(message.type, 'tool_result', 'Should send tool_result message');
+      assertEqual(message.payload.toolId, 'tool-456', 'Should include tool ID');
+      assert(!message.payload.approved, 'Should indicate denial');
+      assertEqual(message.payload.result, 'Tool execution denied', 'Should include denial message');
+    });
+
+    // Test runner
+    async function runTests() {
+      const resultsDiv = document.getElementById('test-results');
+
+      for (const testCase of tests) {
+        try {
+          await testCase.fn();
+          passed++;
+          resultsDiv.innerHTML += `
+            <div class="bg-green-50 border-l-4 border-green-400 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                  </svg>
+                </div>
+                <div class="ml-3">
+                  <p class="text-sm text-green-700">
+                    <strong>${testCase.name}</strong> - Passed
+                  </p>
+                </div>
+              </div>
+            </div>
+          `;
+        } catch (error) {
+          failed++;
+          resultsDiv.innerHTML += `
+            <div class="bg-red-50 border-l-4 border-red-400 p-4">
+              <div class="flex">
+                <div class="flex-shrink-0">
+                  <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                  </svg>
+                </div>
+                <div class="ml-3">
+                  <p class="text-sm text-red-700">
+                    <strong>${testCase.name}</strong> - Failed: ${error.message}
+                  </p>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      // Update status
+      const statusDiv = document.getElementById('test-status');
+      const statusBadge = document.getElementById('status-badge');
+      const totalCount = document.getElementById('total-count');
+      const passCount = document.getElementById('pass-count');
+      const failCount = document.getElementById('fail-count');
+      const statusContent = document.getElementById('status-content');
+
+      statusDiv.classList.remove('hidden');
+      totalCount.textContent = passed + failed;
+      passCount.textContent = passed;
+      failCount.textContent = failed;
+
+      if (failed === 0) {
+        statusBadge.textContent = 'All Tests Passed';
+        statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800';
+      } else {
+        statusBadge.textContent = 'Some Tests Failed';
+        statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800';
+      }
+
+      statusContent.innerHTML = `
+        <div class="grid grid-cols-3 gap-4 mb-4">
+          <div class="text-center">
+            <div class="text-2xl font-bold text-green-600">${passed}</div>
+            <div class="text-sm text-gray-600">Passed</div>
+          </div>
+          <div class="text-center">
+            <div class="text-2xl font-bold text-red-600">${failed}</div>
+            <div class="text-sm text-gray-600">Failed</div>
+          </div>
+          <div class="text-center">
+            <div class="text-2xl font-bold text-blue-600">${passed + failed}</div>
+            <div class="text-sm text-gray-600">Total</div>
+          </div>
+        </div>
+        ${failed === 0 ?
+          '<div class="bg-green-50 border-l-4 border-green-400 p-4"><p class="text-green-700">All tests passed! ✅</p></div>' :
+          '<div class="bg-red-50 border-l-4 border-red-400 p-4"><p class="text-red-700">Some tests failed. Please review the errors above.</p></div>'
+        }
+      `;
+    }
+
+    // Run tests when page loads
+    runTests().catch(error => {
+      console.error('Test runner failed:', error);
+      // Update UI to show failure
+      document.getElementById('test-results').innerHTML += `
+        <div class="bg-red-50 border-l-4 border-red-400 p-4">
+          <p class="text-red-700">Test runner failed: ${error.message}</p>
+        </div>
+      `;
+      // Force status update
+      const statusDiv = document.getElementById('test-status');
+      const statusBadge = document.getElementById('status-badge');
+      statusDiv.classList.remove('hidden');
+      statusBadge.textContent = 'Some Tests Failed';
+      statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800';
+    });
+  </script>
+</body>
+</html>

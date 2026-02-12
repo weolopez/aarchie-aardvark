@@ -27,14 +27,21 @@ export class ToolAnalyzer {
     const toolName = tool.name.toLowerCase();
     const toolDescription = (tool.description || '').toLowerCase();
 
+    const stopwords = new Set(['the', 'and', 'for', 'with', 'that', 'this', 'from']);
     let score = 0;
 
     // Name match - check if tool name contains query words or vice versa
-    const queryWords = queryLower.split(/\s+/);
+    const queryWords = queryLower.split(/\s+/).filter(w => !stopwords.has(w));
     for (const word of queryWords) {
-      if (word.length > 3) {
-        if (toolName.includes(word) || word.includes(toolName) || 
-            this.levenshteinDistance(word, toolName) <= 2) {
+      if (word.length >= 3) {
+        const distanceThreshold = word.length > 4 ? 2 : 1;
+        
+        // For 3-character words, prefer exact match or distance 1 (full word)
+        const isMatch = word.length === 3 
+          ? (toolName === word || this.levenshteinDistance(word, toolName) <= 1)
+          : (toolName.includes(word) || word.includes(toolName) || this.levenshteinDistance(word, toolName) <= distanceThreshold);
+
+        if (isMatch) {
           score += 0.8;
           break; // Only count once for name match
         }
@@ -42,14 +49,20 @@ export class ToolAnalyzer {
     }
 
     // Description keyword matches
-    const descWords = toolDescription.split(/\s+/);
+    const descWords = toolDescription.split(/\s+/).filter(w => !stopwords.has(w));
     for (const descWord of descWords) {
-      if (descWord.length > 3) {
+      if (descWord.length >= 3) {
         for (const queryWord of queryWords) {
-          if (queryWord.length > 3 && 
-              (descWord.includes(queryWord) || queryWord.includes(descWord) ||
-               this.levenshteinDistance(queryWord, descWord) <= 2)) {
-            score += 0.2;
+          if (queryWord.length >= 3) {
+            const distanceThreshold = queryWord.length > 4 ? 2 : 1;
+            
+            const isMatch = queryWord.length === 3
+              ? (descWord === queryWord || this.levenshteinDistance(queryWord, descWord) <= 1)
+              : (descWord.includes(queryWord) || queryWord.includes(descWord) || this.levenshteinDistance(queryWord, descWord) <= distanceThreshold);
+
+            if (isMatch) {
+              score += 0.2;
+            }
           }
         }
       }
@@ -60,9 +73,14 @@ export class ToolAnalyzer {
       for (const func of tool.functions) {
         const funcName = func.name.toLowerCase();
         for (const queryWord of queryWords) {
-          if (queryWord.length > 3 && 
-              (funcName.includes(queryWord) || queryWord.includes(funcName))) {
-            score += 0.5;
+          if (queryWord.length >= 3) {
+            const isMatch = queryWord.length === 3
+              ? (funcName === queryWord || funcName.startsWith(queryWord + '_') || funcName.endsWith('_' + queryWord))
+              : (funcName.includes(queryWord) || queryWord.includes(funcName));
+
+            if (isMatch) {
+              score += 0.5;
+            }
           }
         }
       }

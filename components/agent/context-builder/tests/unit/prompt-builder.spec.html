@@ -110,7 +110,7 @@
       const promptBuilder = new PromptBuilder(toolAnalyzer, conversationOptimizer);
 
       const tools = [
-        { tool: { name: 'calculator', description: 'Math tool', functions: [], permissions: [] } }
+        { name: 'calculator', description: 'Math tool', functions: [], permissions: [] }
       ];
       const prompt = promptBuilder.buildSystemPrompt(tools);
 
@@ -246,6 +246,7 @@
 
         } catch (error) {
           failed++;
+          console.error(`Test Failed: ${test.name} - ${error.message}`);
 
           const resultDiv = document.createElement('div');
           resultDiv.className = 'bg-red-50 border-l-4 border-red-400 p-4 test-result test-failed';

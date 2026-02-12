@@ -43,7 +43,7 @@ export class PromptBuilder {
     return {
       messages,
       tokenUsage,
-      relevantTools: relevantTools.map(rt => rt.tool),
+      relevantTools: relevantTools,
       optimizedHistory
     };
   }
@@ -59,7 +59,7 @@ export class PromptBuilder {
     if (relevantTools && relevantTools.length > 0) {
       prompt += `You have access to the following tools:\n\n`;
 
-      for (const { tool } of relevantTools) {
+      for (const tool of relevantTools) {
         prompt += `**${tool.name}**: ${tool.description || 'No description'}\n`;
 
         if (tool.functions && tool.functions.length > 0) {

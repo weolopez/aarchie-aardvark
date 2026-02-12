@@ -274,6 +274,15 @@ export class MessageBridgeMain {
     this.forwardEvents.clear();
     this.receiveEvents.clear();
   }
+
+  /**
+   * Send a message to the worker
+   * @param {string} eventName - The event name
+   * @param {any} data - The message data
+   */
+  send(eventName, data) {
+    this._sendToWorker(eventName, data);
+  }
   
   /**
    * Check if worker is ready
